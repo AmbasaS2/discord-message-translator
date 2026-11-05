@@ -639,6 +639,21 @@ describe('fetchChatCompletion', () => {
     });
   });
 
+  it('sends the Authorization header only when an API key is set', async () => {
+    vi.mocked(fetch).mockResolvedValue(sseResponse([chunk({ content: 'x' }), 'data: [DONE]\n\n']));
+    await fetchChatCompletion(request);
+    expect(vi.mocked(fetch).mock.calls[0]?.[1]?.headers).toEqual({
+      'Authorization': 'Bearer k',
+      'Content-Type': 'application/json',
+    });
+
+    vi.mocked(fetch).mockResolvedValue(sseResponse([chunk({ content: 'x' }), 'data: [DONE]\n\n']));
+    await fetchChatCompletion({ ...request, apiKey: '' });
+    const headers = vi.mocked(fetch).mock.calls[1]?.[1]?.headers as Record<string, string>;
+    expect(headers).not.toHaveProperty('Authorization');
+    expect(headers['Content-Type']).toBe('application/json');
+  });
+
   it('aborts when the caller signal aborts', async () => {
     const caller = new AbortController();
     vi.mocked(fetch).mockImplementation((_url, init) =>

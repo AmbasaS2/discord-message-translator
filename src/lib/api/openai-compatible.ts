@@ -145,7 +145,8 @@ export async function fetchChatCompletion(
     const response = await fetch(request.url, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${request.apiKey}`,
+        // Local servers need no key, and some reject an empty Bearer token.
+        ...(request.apiKey !== '' && { 'Authorization': `Bearer ${request.apiKey}` }),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(request.body),

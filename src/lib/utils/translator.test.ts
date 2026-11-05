@@ -153,11 +153,11 @@ describe('Translator Utilities', () => {
 
       vi.mocked(getSettings).mockResolvedValue({
         translationProvider: 'openai',
-        apiKeys: { openai: 'test-openai-key' },
-        openaiConfig: {
-          baseUrl: 'https://api.openai.com/v1',
-          model: 'gpt-4',
-        },
+        apiKeys: {},
+        openaiPresets: [
+          { id: 'p1', name: 'gpt-4', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4', apiKey: 'test-openai-key' },
+        ],
+        activeOpenaiPresetId: 'p1',
       } as any);
 
       const result = await translateMessage(messageId, 'Hello', 'ja');
@@ -195,6 +195,8 @@ describe('Translator Utilities', () => {
       vi.mocked(getSettings).mockResolvedValue({
         translationProvider: 'openai',
         apiKeys: {},
+        openaiPresets: [],
+        activeOpenaiPresetId: null,
       } as any);
 
       await expect(translateMessage('msg-openai', 'Hello', 'ja')).rejects.toThrow(
@@ -206,8 +208,11 @@ describe('Translator Utilities', () => {
       mockStorage.get.mockResolvedValue(null);
       vi.mocked(getSettings).mockResolvedValue({
         translationProvider: 'openai',
-        apiKeys: { openai: 'test-key' },
-        openaiConfig: { baseUrl: 'https://api.example.com/v1', model: '' },
+        apiKeys: {},
+        openaiPresets: [
+          { id: 'p1', name: 'x', baseUrl: 'https://api.example.com/v1', model: '', apiKey: 'test-key' },
+        ],
+        activeOpenaiPresetId: 'p1',
       } as any);
 
       await expect(translateMessage('msg-openai-model', 'Hello', 'ja')).rejects.toThrow(

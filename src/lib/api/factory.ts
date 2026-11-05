@@ -1,4 +1,5 @@
 import type { Settings } from '@/types/settings';
+import { getActiveOpenaiPreset } from '@/lib/utils/openai-presets';
 import { GoogleTranslateClient } from './google-translate';
 import { DeepLClient } from './deepl';
 import { OpenAICompatibleClient } from './openai-compatible';
@@ -34,19 +35,21 @@ export function createTranslationClient(settings: Settings): TranslationClient {
       }
       return new DeepLClient(settings.apiKeys.deepl, true);
 
-    case 'openai':
-      if (!settings.apiKeys.openai || !settings.openaiConfig) {
+    case 'openai': {
+      const preset = getActiveOpenaiPreset(settings);
+      if (!preset || !preset.baseUrl.trim()) {
         throw new Error('OpenAI API is not configured');
       }
-      if (!settings.openaiConfig.model) {
+      if (!preset.model.trim()) {
         throw new Error('OpenAI model is not configured');
       }
       return new OpenAICompatibleClient({
-        apiKey: settings.apiKeys.openai,
-        baseUrl: settings.openaiConfig.baseUrl,
-        model: settings.openaiConfig.model,
-        extraBody: settings.openaiConfig.extraBody,
+        apiKey: preset.apiKey,
+        baseUrl: preset.baseUrl,
+        model: preset.model,
+        extraBody: preset.extraBody,
       }, requestCompletionViaBackground);
+    }
 
     case 'chrome-builtin':
       if (!ChromeBuiltinTranslator.isAvailable()) {
