@@ -46,13 +46,18 @@ This will create a `.output/chrome-mv3` folder with the compiled extension.
    - **Google Translate**: Get an API key from [Google Cloud Translation API](https://cloud.google.com/translate/docs)
    - **DeepL**: Get an API key from [DeepL API](https://www.deepl.com/pro-api)
    - **OpenAI-compatible API**: Configure with any OpenAI-compatible endpoint
-3. Enter your API key and configure provider-specific settings (auto-saved)
+3. Enter your API key and configure provider-specific settings (auto-saved, except OpenAI-compatible presets, which use **Save**)
 
-For OpenAI-compatible APIs, you'll need to configure:
-- **Base URL**: API endpoint (e.g., `https://api.openai.com/v1`, or a local server such as `http://127.0.0.1:8080/v1`). If **Allow access to this URL** appears below the field, click it so the extension can reach the endpoint even when it doesn't send CORS headers.
+For OpenAI-compatible APIs, add a preset for each endpoint you use. Click **Add preset** and fill in:
+- **Name**: Label shown in the preset list
+- **Base URL**: API endpoint (e.g., `https://api.openai.com/v1`, or a local server such as `http://127.0.0.1:8080/v1`). The extension appends `/chat/completions`, so enter the base URL without it. Save and Test ask for access to this URL, so the extension can reach the endpoint even when it doesn't send CORS headers.
 - **Model**: Model name as expected by the endpoint. For a model ID starting with `pfnet/plamo-3-translate-` (or `plamo-3-translate`), the extension sends each text alone with the target language in `chat_template_kwargs`, as that model expects. Start llama-server with the model's bundled `chat_template.jinja` (`--chat-template-file`).
-- **API Key**: Your API key for the service
+- **API Key**: Optional. Leave it empty for local servers that need no key.
 - **Extra request body (JSON)**: Optional; see [Reasoning models](#reasoning-models)
+
+Choose the radio button next to a preset to make it the active one for translations. **Edit** and **Delete** change or remove a preset. In the preset form, **Test** asks for access to the endpoint and runs a test translation; **Save** keeps the changes and **Cancel** discards them.
+
+All settings and API keys are stored in `chrome.storage.local` on this device and are not synced. Settings from earlier versions are moved automatically when you update: the old OpenAI configuration becomes the first preset, which is active, and the copy in Chrome Sync is removed.
 
 ## Development
 
@@ -72,7 +77,7 @@ VITE_DEEPL_API_KEY=your_deepl_api_key
 VITE_OPENAI_API_KEY=your_openai_api_key
 ```
 
-**Note**: In production (Chrome Extension), API keys are stored securely in Chrome Storage API, not in environment variables.
+**Note**: In production (Chrome Extension), API keys are stored in `chrome.storage.local` on this device, not in environment variables. They are not synced.
 
 ### Run in Development Mode
 
@@ -135,7 +140,7 @@ options page (detailed configuration). Open the options page from the popup's
 
 **Options page**
 - **Translation Provider**: Choose between Google Translate, DeepL, OpenAI-compatible APIs, or Chrome Built-in Translator
-- **API Configuration**: Configure API keys and provider-specific settings
+- **API Configuration**: Configure API keys, provider-specific settings, and OpenAI-compatible presets
 - **Language Detection**: An API status panel plus **Skip Target Language**, which automatically skips translation for messages already in the target language (requires Chrome's Language Detector API)
 - **Cache Settings**:
   - **Cache TTL**: How long to keep translations cached (default: 7 days)
@@ -186,7 +191,7 @@ options page (detailed configuration). Open the options page from the popup's
 - The **Extra request body (JSON)** option takes a JSON object that is merged into every chat-completions request, e.g. `{"reasoning_effort": "low"}` or `{"max_tokens": 8000}`
 - It can override `temperature` and `max_tokens`, but not `model` or `messages`
 - A `null` value removes the field from the request, for endpoints that reject `max_tokens` or `temperature`, e.g. `{"max_tokens": null}`
-- Each request times out after 120 seconds without a complete response; responses are not streamed, so a long reasoning phase counts against the limit
+- Each request times out after 120 seconds without a complete response, and a long reasoning phase counts against the limit. Requests run in the background service worker and are streamed (`stream: true`), falling back to plain JSON when the server does not stream
 - If the model returns reasoning but no translated text, or stops at the token limit, the extension reports that instead of an empty translation; raise `max_tokens` or lower the reasoning effort via the extra request body
 - Invalid JSON in the field is not saved; the options page shows the parse error
 
