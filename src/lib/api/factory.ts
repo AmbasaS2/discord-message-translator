@@ -2,6 +2,7 @@ import type { Settings } from '@/types/settings';
 import { GoogleTranslateClient } from './google-translate';
 import { DeepLClient } from './deepl';
 import { OpenAICompatibleClient } from './openai-compatible';
+import { requestCompletionViaBackground } from './openai-background';
 import { ChromeBuiltinTranslator } from './chrome-builtin';
 
 export interface TranslationClient {
@@ -45,7 +46,7 @@ export function createTranslationClient(settings: Settings): TranslationClient {
         baseUrl: settings.openaiConfig.baseUrl,
         model: settings.openaiConfig.model,
         extraBody: settings.openaiConfig.extraBody,
-      });
+      }, requestCompletionViaBackground);
 
     case 'chrome-builtin':
       if (!ChromeBuiltinTranslator.isAvailable()) {

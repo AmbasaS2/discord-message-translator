@@ -187,6 +187,9 @@
   "options_baseUrl": {
     "message": "Base URL"
   },
+  "options_grantEndpointAccess": {
+    "message": "Allow access to this URL"
+  },
   "options_baseUrlHint": {
     "message": "e.g., https://api.openai.com/v1 or custom endpoint"
   },

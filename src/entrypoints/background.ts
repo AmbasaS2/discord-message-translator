@@ -1,5 +1,6 @@
 import { ChromeStorageCache } from '@/lib/cache/chrome-storage';
 import { DEFAULT_SETTINGS } from '@/types/settings';
+import { serveCompletionRequests } from '@/lib/api/openai-background';
 
 export default defineBackground(() => {
   // Initialize on extension install
@@ -27,6 +28,8 @@ export default defineBackground(() => {
       console.log('[Background] Cache cleanup completed');
     }
   });
+
+  serveCompletionRequests();
 
   console.log('[Background] Service worker started');
 });

@@ -12,6 +12,9 @@ export default defineConfig({
       'https://discord.com/*',
       'https://*.discord.com/*',
     ],
+    // OpenAI-compatible endpoints are user-defined; the options page requests
+    // the configured origin at runtime.
+    optional_host_permissions: ['https://*/*', 'http://*/*'],
     icons: {
       16: '/icons/icon16.png',
       48: '/icons/icon48.png',

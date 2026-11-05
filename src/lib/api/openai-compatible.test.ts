@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { OpenAICompatibleClient, parseExtraBody, REQUEST_TIMEOUT_MS } from './openai-compatible';
+import {
+  fetchChatCompletion,
+  OpenAICompatibleClient,
+  parseExtraBody,
+  REQUEST_TIMEOUT_MS,
+  type CompletionTransport,
+} from './openai-compatible';
 
 // Mock fetch
 global.fetch = vi.fn();
@@ -40,6 +46,7 @@ describe('OpenAICompatibleClient', () => {
 
       vi.mocked(fetch).mockResolvedValue({
         ok: true,
+        headers: new Headers(),
         json: async () => mockResponse,
       } as Response);
 
@@ -65,6 +72,7 @@ describe('OpenAICompatibleClient', () => {
 
       vi.mocked(fetch).mockResolvedValue({
         ok: true,
+        headers: new Headers(),
         json: async () => mockResponse,
       } as Response);
 
@@ -82,6 +90,7 @@ describe('OpenAICompatibleClient', () => {
 
       vi.mocked(fetch).mockResolvedValue({
         ok: true,
+        headers: new Headers(),
         json: async () => mockResponse,
       } as Response);
 
@@ -104,6 +113,7 @@ describe('OpenAICompatibleClient', () => {
 
       vi.mocked(fetch).mockResolvedValue({
         ok: true,
+        headers: new Headers(),
         json: async () => mockResponse,
       } as Response);
 
@@ -165,6 +175,7 @@ describe('OpenAICompatibleClient', () => {
     ])('should report exhausted output budget (%s)', async (_label, message, finishReason) => {
       vi.mocked(fetch).mockResolvedValue({
         ok: true,
+        headers: new Headers(),
         json: async () => ({ choices: [{ finish_reason: finishReason, message }] }),
       } as Response);
 
@@ -174,6 +185,7 @@ describe('OpenAICompatibleClient', () => {
     it.each([{ choices: [] }, {}])('should report empty translation for %j', async (payload) => {
       vi.mocked(fetch).mockResolvedValue({
         ok: true,
+        headers: new Headers(),
         json: async () => payload,
       } as Response);
 
@@ -195,6 +207,7 @@ describe('OpenAICompatibleClient', () => {
 
       vi.mocked(fetch).mockResolvedValue({
         ok: true,
+        headers: new Headers(),
         json: async () => mockResponse,
       } as Response);
 
@@ -216,6 +229,7 @@ describe('OpenAICompatibleClient', () => {
 
       vi.mocked(fetch).mockResolvedValue({
         ok: true,
+        headers: new Headers(),
         json: async () => mockResponse,
       } as Response);
 
@@ -230,6 +244,7 @@ describe('OpenAICompatibleClient', () => {
 
       vi.mocked(fetch).mockResolvedValue({
         ok: true,
+        headers: new Headers(),
         json: async () => mockResponse,
       } as Response);
 
@@ -253,6 +268,7 @@ describe('OpenAICompatibleClient', () => {
 
       vi.mocked(fetch).mockResolvedValue({
         ok: true,
+        headers: new Headers(),
         json: async () => mockResponse,
       } as Response);
 
@@ -277,6 +293,7 @@ describe('OpenAICompatibleClient', () => {
 
       vi.mocked(fetch).mockResolvedValue({
         ok: true,
+        headers: new Headers(),
         json: async () => ({ choices: [{ message: { content: 'Translated' } }] }),
       } as Response);
 
@@ -297,6 +314,7 @@ describe('OpenAICompatibleClient', () => {
       for (const content of contents) {
         vi.mocked(fetch).mockResolvedValueOnce({
           ok: true,
+          headers: new Headers(),
           json: async () => ({ choices: [{ message: { content } }] }),
         } as Response);
       }
@@ -446,6 +464,7 @@ describe('OpenAICompatibleClient', () => {
     function mockContent(content: string): void {
       vi.mocked(fetch).mockResolvedValue({
         ok: true,
+        headers: new Headers(),
         json: async () => ({ choices: [{ message: { content } }] }),
       } as Response);
     }
@@ -538,7 +557,7 @@ describe('OpenAICompatibleClient', () => {
       vi.mocked(fetch).mockImplementation(async (_url, init) => {
         const signal = signalOf(init);
         const json = (): Promise<unknown> => rejectOnAbort(signal);
-        return { ok: true, json } as Response;
+        return { ok: true, headers: new Headers(), json } as Response;
       });
 
       const promise = client.translate('Hello', 'fr');
@@ -560,6 +579,7 @@ describe('OpenAICompatibleClient', () => {
     it('passes an abort signal and clears the timer after success', async () => {
       vi.mocked(fetch).mockResolvedValue({
         ok: true,
+        headers: new Headers(),
         json: async () => ({ choices: [{ message: { content: 'Bonjour' } }] }),
       } as Response);
 
@@ -569,5 +589,83 @@ describe('OpenAICompatibleClient', () => {
       expect(callArgs[1]?.signal).toBeInstanceOf(AbortSignal);
       expect(vi.getTimerCount()).toBe(0);
     });
+  });
+});
+
+function sseResponse(frames: string[]): Response {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const frame of frames) controller.enqueue(encoder.encode(frame));
+      controller.close();
+    },
+  });
+  return new Response(body, { headers: { 'Content-Type': 'text/event-stream' } });
+}
+
+const chunk = (delta: Record<string, unknown>, finishReason: string | null = null) =>
+  `data: ${JSON.stringify({ choices: [{ delta, finish_reason: finishReason }] })}\n\n`;
+
+describe('fetchChatCompletion', () => {
+  const request = { url: 'http://127.0.0.1:9931/v1/chat/completions', apiKey: 'k', body: { model: 'm' } };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('joins streamed deltas, including frames split across reads', async () => {
+    const frames = [chunk({ content: 'Bon' }), chunk({ content: 'jour' }, 'stop'), 'data: [DONE]\n\n'];
+    const joined = frames.join('');
+    vi.mocked(fetch).mockResolvedValue(sseResponse([joined.slice(0, 20), joined.slice(20)]));
+
+    await expect(fetchChatCompletion(request)).resolves.toEqual({
+      content: 'Bonjour',
+      reasoning: '',
+      finishReason: 'stop',
+    });
+  });
+
+  it('collects reasoning from both field names and ignores keep-alive lines', async () => {
+    vi.mocked(fetch).mockResolvedValue(sseResponse([
+      ': keep-alive\n\n',
+      chunk({ reasoning_content: 'think ' }),
+      chunk({ reasoning: 'more' }, 'length'),
+    ]));
+
+    await expect(fetchChatCompletion(request)).resolves.toEqual({
+      content: '',
+      reasoning: 'think more',
+      finishReason: 'length',
+    });
+  });
+
+  it('aborts when the caller signal aborts', async () => {
+    const caller = new AbortController();
+    vi.mocked(fetch).mockImplementation((_url, init) =>
+      new Promise((_, reject) =>
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))));
+
+    const promise = fetchChatCompletion(request, caller.signal);
+    caller.abort();
+    await expect(promise).rejects.toThrow('Aborted');
+  });
+});
+
+describe('OpenAICompatibleClient transport', () => {
+  it('sends a streaming request through the injected transport', async () => {
+    const transport = vi.fn<CompletionTransport>().mockResolvedValue({
+      content: ' Bonjour ',
+      reasoning: '',
+      finishReason: 'stop',
+    });
+    const client = new OpenAICompatibleClient(
+      { apiKey: 'k', baseUrl: 'http://127.0.0.1:9931/v1/', model: 'm' },
+      transport,
+    );
+
+    await expect(client.translate('Hello', 'fr')).resolves.toBe('Bonjour');
+    const request = transport.mock.calls[0]?.[0];
+    expect(request?.url).toBe('http://127.0.0.1:9931/v1/chat/completions');
+    expect(request?.body).toMatchObject({ model: 'm', stream: true });
   });
 });

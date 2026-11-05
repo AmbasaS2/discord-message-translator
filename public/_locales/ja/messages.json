@@ -187,6 +187,9 @@
   "options_baseUrl": {
     "message": "ベースURL"
   },
+  "options_grantEndpointAccess": {
+    "message": "この URL へのアクセスを許可"
+  },
   "options_baseUrlHint": {
     "message": "例: https://api.openai.com/v1 またはカスタムエンドポイント"
   },

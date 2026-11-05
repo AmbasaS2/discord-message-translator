@@ -10,19 +10,37 @@ interface ChatMessage {
   content: string;
 }
 
+interface ReasoningFields {
+  content?: string | null;
+  reasoning_content?: string | null;
+  reasoning?: string | null;
+}
+
 interface ChatCompletionResponse {
   choices?: Array<{
     finish_reason?: string | null;
-    message?: {
-      content?: string | null;
-      reasoning_content?: string | null;
-      reasoning?: string | null;
-    };
+    message?: ReasoningFields;
+    delta?: ReasoningFields;
   }>;
 }
 
-// Non-streaming responses from reasoning models only arrive once the whole
-// answer is ready, so the limit is generous.
+export interface CompletionRequest {
+  url: string;
+  apiKey: string;
+  body: Record<string, unknown>;
+}
+
+export interface CompletionResult {
+  content: string;
+  reasoning: string;
+  finishReason: string | null;
+}
+
+/** Performs one chat-completions HTTP request. Injected so the content script can run it in the background. */
+export type CompletionTransport = (request: CompletionRequest) => Promise<CompletionResult>;
+
+// Reasoning models can think for a long time before the answer completes, so
+// the limit is generous.
 export const REQUEST_TIMEOUT_MS = 120_000;
 
 const REASONING_EXHAUSTED_MESSAGE =
@@ -104,10 +122,103 @@ export function parseIndexedTranslations(content: string, count: number): Map<nu
   return result;
 }
 
+/**
+ * Send one streamed chat-completions request and collect the whole answer.
+ * Streaming makes the response headers arrive immediately, which keeps an
+ * extension service worker from being stopped while a reasoning model thinks
+ * (Chrome stops it when a fetch response takes over 30 s to arrive).
+ */
+export async function fetchChatCompletion(
+  request: CompletionRequest,
+  signal?: AbortSignal,
+): Promise<CompletionResult> {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  signal?.addEventListener('abort', abort);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(request.url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${request.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request.body),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => '');
+      const status = [response.status, response.statusText].filter(Boolean).join(' ');
+      const detail = formatErrorBody(errorBody) || response.statusText || 'Unknown error';
+      throw new Error(`OpenAI API Error${status ? ` (${status})` : ''}: ${detail}`);
+    }
+
+    // Some servers ignore "stream": true and answer with a single JSON body.
+    const isEventStream = response.headers.get('content-type')?.includes('text/event-stream');
+    if (!isEventStream || !response.body) {
+      const choice = ((await response.json()) as ChatCompletionResponse)?.choices?.[0];
+      return {
+        content: choice?.message?.content ?? '',
+        reasoning: choice?.message?.reasoning_content || choice?.message?.reasoning || '',
+        finishReason: choice?.finish_reason ?? null,
+      };
+    }
+
+    const result: CompletionResult = { content: '', reasoning: '', finishReason: null };
+    const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += value;
+
+      // SSE frames are newline-delimited; each "data:" line holds one JSON chunk.
+      let newline: number;
+      while ((newline = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, newline).trim();
+        buffer = buffer.slice(newline + 1);
+        if (!line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        if (payload === '[DONE]') return result;
+        let choice;
+        try {
+          choice = (JSON.parse(payload) as ChatCompletionResponse)?.choices?.[0];
+        } catch {
+          continue;
+        }
+        const delta = choice?.delta;
+        // GLM/DeepSeek stream `reasoning_content`; OpenRouter and others use `reasoning`.
+        result.reasoning += delta?.reasoning_content || delta?.reasoning || '';
+        result.content += delta?.content ?? '';
+        if (choice?.finish_reason) result.finishReason = choice.finish_reason;
+      }
+    }
+    return result;
+  } catch (error) {
+    // Detect our own timer rather than error.name: the abort reason can vary
+    // by runtime and by mock.
+    if (timedOut) {
+      throw new Error(`LLM did not respond within ${REQUEST_TIMEOUT_MS / 1000} s`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', abort);
+  }
+}
+
 export class OpenAICompatibleClient {
   private config: OpenAIConfig;
+  private transport: CompletionTransport;
 
-  constructor(config: OpenAIConfig) {
+  constructor(config: OpenAIConfig, transport: CompletionTransport = fetchChatCompletion) {
+    this.transport = transport;
     // Users often paste the full endpoint URL; strip it so we don't request .../chat/completions/chat/completions
     const baseUrl = config.baseUrl
       .trim()
@@ -235,54 +346,21 @@ Rules:
       if (value === null) delete body[key];
     }
 
-    const controller = new AbortController();
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, REQUEST_TIMEOUT_MS);
+    const result = await this.transport({
+      url: `${this.config.baseUrl}/chat/completions`,
+      apiKey: this.config.apiKey,
+      body: { ...body, stream: true },
+    });
+    const content = result.content.trim();
 
-    try {
-      const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.config.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text().catch(() => '');
-        const status = [response.status, response.statusText].filter(Boolean).join(' ');
-        const detail = formatErrorBody(errorBody) || response.statusText || 'Unknown error';
-        throw new Error(`OpenAI API Error${status ? ` (${status})` : ''}: ${detail}`);
+    if (!content) {
+      if (result.reasoning.trim() || result.finishReason === 'length') {
+        throw new Error(REASONING_EXHAUSTED_MESSAGE);
       }
-
-      const data = (await response.json()) as ChatCompletionResponse;
-      const choice = data?.choices?.[0];
-      const content = choice?.message?.content?.trim();
-
-      if (!content) {
-        const reasoning = choice?.message?.reasoning_content || choice?.message?.reasoning;
-        if ((typeof reasoning === 'string' && reasoning.trim()) || choice?.finish_reason === 'length') {
-          throw new Error(REASONING_EXHAUSTED_MESSAGE);
-        }
-        throw new Error('OpenAI API returned empty translation');
-      }
-
-      return content;
-    } catch (error) {
-      // Detect our own timer rather than error.name: the abort reason can vary
-      // by runtime and by mock.
-      if (timedOut) {
-        throw new Error(`LLM did not respond within ${REQUEST_TIMEOUT_MS / 1000} s`);
-      }
-      throw error;
-    } finally {
-      clearTimeout(timer);
+      throw new Error('OpenAI API returned empty translation');
     }
+
+    return content;
   }
 
   /**

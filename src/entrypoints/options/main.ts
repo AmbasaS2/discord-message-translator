@@ -30,6 +30,7 @@ const openaiApiSection = document.getElementById('openaiApiSection') as HTMLDivE
 const openaiApiKeyInput = document.getElementById('openaiApiKey') as HTMLInputElement;
 const toggleOpenaiApiKeyVisibility = document.getElementById('toggleOpenaiApiKeyVisibility') as HTMLButtonElement;
 const openaiBaseUrlInput = document.getElementById('openaiBaseUrl') as HTMLInputElement;
+const grantEndpointAccessButton = document.getElementById('grantEndpointAccess') as HTMLButtonElement;
 const openaiModelInput = document.getElementById('openaiModel') as HTMLInputElement;
 const openaiExtraBodyInput = document.getElementById('openaiExtraBody') as HTMLTextAreaElement;
 const openaiExtraBodyError = document.getElementById('openaiExtraBodyError') as HTMLParagraphElement;
@@ -146,6 +147,7 @@ async function loadSettings() {
   openaiBaseUrlInput.value = settings.openaiConfig?.baseUrl || 'https://api.openai.com/v1';
   openaiModelInput.value = settings.openaiConfig?.model || '';
   openaiExtraBodyInput.value = settings.openaiConfig?.extraBody || '';
+  void updateEndpointAccessButton();
   cacheTTLDaysInput.value = settings.cacheTTLDays.toString();
   updateCacheTTLDisplay(settings.cacheTTLDays);
 
@@ -245,6 +247,33 @@ openaiBaseUrlInput.addEventListener('input', () => {
   const baseUrl = openaiBaseUrlInput.value.trim() || 'https://api.openai.com/v1';
   const model = openaiModelInput.value.trim();
   autoSave({ openaiConfig: { baseUrl, model } });
+  void updateEndpointAccessButton();
+});
+
+// Without a host permission the background fetch only succeeds if the
+// endpoint answers CORS for the extension origin, which local servers often don't.
+function endpointOriginPattern(): string | null {
+  try {
+    // Match patterns without a port match every port.
+    const url = new URL(openaiBaseUrlInput.value.trim() || 'https://api.openai.com/v1');
+    return `${url.protocol}//${url.hostname}/*`;
+  } catch {
+    return null;
+  }
+}
+
+async function updateEndpointAccessButton() {
+  const origin = endpointOriginPattern();
+  const granted = origin === null || (await chrome.permissions.contains({ origins: [origin] }));
+  grantEndpointAccessButton.classList.toggle('hidden', granted);
+}
+
+grantEndpointAccessButton.addEventListener('click', async () => {
+  const origin = endpointOriginPattern();
+  if (origin === null) return;
+  // Must run directly in the click handler: the request needs a user gesture.
+  await chrome.permissions.request({ origins: [origin] });
+  await updateEndpointAccessButton();
 });
 
 // OpenAI Model input
