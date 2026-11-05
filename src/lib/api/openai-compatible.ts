@@ -213,9 +213,28 @@ export async function fetchChatCompletion(
   }
 }
 
+// PLaMo 3 Translate only translates: it renders no system prompt (its GGUF
+// chat template drops system messages, and older templates translate them as
+// text) and takes the target language from chat_template_kwargs.
+const PLAMO_TRANSLATE_MODEL = /^(pfnet\/)?plamo-3-translate(-|$)/i;
+const PLAMO_STOP_TOKENS = ['<|plamo:tag|>', '<|plamo:bos|>'];
+
+/** The PLaMo chat template accepts only lowercase codes with an optional 4-letter script subtag. */
+function toPlamoLanguageCode(langCode: string): string {
+  const lower = langCode.toLowerCase();
+  if (lower === 'zh-cn') return 'zh-hans';
+  if (lower === 'zh-tw') return 'zh-hant';
+  return lower.split('-')[0] ?? lower;
+}
+
+interface PlamoOptions {
+  targetLang: string;
+}
+
 export class OpenAICompatibleClient {
   private config: OpenAIConfig;
   private transport: CompletionTransport;
+  private isPlamoTranslate: boolean;
 
   constructor(config: OpenAIConfig, transport: CompletionTransport = fetchChatCompletion) {
     this.transport = transport;
@@ -225,6 +244,7 @@ export class OpenAICompatibleClient {
       .replace(/\/+$/, '')
       .replace(/\/chat\/completions$/, '');
     this.config = { ...config, baseUrl };
+    this.isPlamoTranslate = PLAMO_TRANSLATE_MODEL.test(config.model.trim());
   }
 
   /**
@@ -233,6 +253,10 @@ export class OpenAICompatibleClient {
    */
   async translate(text: string, targetLang: string, _sourceLang?: string): Promise<string> {
     // Note: sourceLang is ignored as LLM can auto-detect the language
+    if (this.isPlamoTranslate) {
+      return this.requestCompletion([{ role: 'user', content: text }], 1000, { targetLang });
+    }
+
     const targetLanguageName = this.getLanguageName(targetLang);
 
     const systemPrompt = `You are a professional translator. Your task is to translate the given text to ${targetLanguageName}.
@@ -263,6 +287,12 @@ Rules:
   async translateBatch(texts: string[], targetLang: string, _sourceLang?: string): Promise<string[]> {
     if (texts.length === 0) {
       return [];
+    }
+
+    // The model translates a JSON array as text instead of keeping its shape,
+    // so each text gets its own request.
+    if (this.isPlamoTranslate) {
+      return Promise.all(texts.map((text) => this.translate(text, targetLang)));
     }
 
     // Limit batch size to prevent LLM from losing track
@@ -325,7 +355,11 @@ Rules:
   /**
    * Send one chat-completions request and return the trimmed, non-empty content
    */
-  private async requestCompletion(messages: ChatMessage[], maxTokens: number): Promise<string> {
+  private async requestCompletion(
+    messages: ChatMessage[],
+    maxTokens: number,
+    plamo?: PlamoOptions,
+  ): Promise<string> {
     // Parsed per request so an invalid stored value surfaces as a translate error
     // instead of making the factory throw.
     const extra = parseExtraBody(this.config.extraBody);
@@ -334,12 +368,22 @@ Rules:
     }
 
     const body: Record<string, unknown> = {
-      temperature: 0.3, // Lower temperature for more consistent translations
+      // Lower temperature for more consistent translations; the PLaMo model card uses greedy decoding.
+      temperature: plamo ? 0 : 0.3,
       max_tokens: maxTokens,
+      ...(plamo && { stop: PLAMO_STOP_TOKENS }),
       ...extra.value, // may override temperature/max_tokens or add fields
       model: this.config.model, // core fields always win
       messages,
     };
+    if (plamo) {
+      // Keep other template options (context, glossary, form) from the extra body.
+      const kwargs = extra.value?.chat_template_kwargs;
+      body.chat_template_kwargs = {
+        ...(typeof kwargs === 'object' && kwargs !== null && !Array.isArray(kwargs) ? kwargs : {}),
+        target_lang: toPlamoLanguageCode(plamo.targetLang),
+      };
+    }
     // A null in the extra body means "omit this field": some endpoints reject
     // max_tokens or temperature. JSON.stringify would otherwise send null.
     for (const [key, value] of Object.entries(body)) {

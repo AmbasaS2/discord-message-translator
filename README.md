@@ -50,7 +50,7 @@ This will create a `.output/chrome-mv3` folder with the compiled extension.
 
 For OpenAI-compatible APIs, you'll need to configure:
 - **Base URL**: API endpoint (e.g., `https://api.openai.com/v1`, or a local server such as `http://127.0.0.1:8080/v1`). If **Allow access to this URL** appears below the field, click it so the extension can reach the endpoint even when it doesn't send CORS headers.
-- **Model**: Model name as expected by the endpoint
+- **Model**: Model name as expected by the endpoint. For a model ID starting with `pfnet/plamo-3-translate-` (or `plamo-3-translate`), the extension sends each text alone with the target language in `chat_template_kwargs`, as that model expects. Start llama-server with the model's bundled `chat_template.jinja` (`--chat-template-file`).
 - **API Key**: Your API key for the service
 - **Extra request body (JSON)**: Optional; see [Reasoning models](#reasoning-models)
 

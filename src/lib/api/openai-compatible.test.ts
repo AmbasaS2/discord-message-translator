@@ -669,3 +669,74 @@ describe('OpenAICompatibleClient transport', () => {
     expect(request?.body).toMatchObject({ model: 'm', stream: true });
   });
 });
+
+describe('PLaMo 3 Translate models', () => {
+  const okResult = { content: 'こんにちは', reasoning: '', finishReason: 'stop' };
+
+  function plamoClient(model: string, extraBody?: string) {
+    const transport = vi.fn<CompletionTransport>().mockResolvedValue(okResult);
+    const client = new OpenAICompatibleClient({ apiKey: 'k', baseUrl: 'http://127.0.0.1:9931/v1', model, extraBody }, transport);
+    return { client, transport };
+  }
+
+  const bodyOf = (transport: ReturnType<typeof plamoClient>['transport'], call = 0) => transport.mock.calls[call]?.[0].body;
+
+  it.each(['pfnet/plamo-3-translate-0.8b', 'pfnet/plamo-3-translate-0.8b-GGUF', 'plamo-3-translate', 'PFNET/PLaMo-3-Translate-0.8b'])(
+    'sends only the text with the target language as a template kwarg for %s',
+    async (model) => {
+      const { client, transport } = plamoClient(model);
+
+      await expect(client.translate('Hello', 'ja')).resolves.toBe('こんにちは');
+      expect(bodyOf(transport)).toMatchObject({
+        messages: [{ role: 'user', content: 'Hello' }],
+        chat_template_kwargs: { target_lang: 'ja' },
+        temperature: 0,
+        stop: ['<|plamo:tag|>', '<|plamo:bos|>'],
+      });
+    },
+  );
+
+  it.each(['gpt-4', 'plamo-2-translate', 'pfnet/plamo-3-translator'])('keeps the generic prompt for %s', async (model) => {
+    const { client, transport } = plamoClient(model);
+
+    await client.translate('Hello', 'ja');
+    expect(bodyOf(transport)?.messages).toHaveLength(2);
+    expect(bodyOf(transport)).not.toHaveProperty('chat_template_kwargs');
+  });
+
+  it.each([
+    ['zh-CN', 'zh-hans'],
+    ['zh-TW', 'zh-hant'],
+    ['EN', 'en'],
+    ['pt-BR', 'pt'],
+  ])('maps %s to the template code %s', async (code, expected) => {
+    const { client, transport } = plamoClient('plamo-3-translate');
+
+    await client.translate('Hello', code);
+    expect(bodyOf(transport)?.chat_template_kwargs).toEqual({ target_lang: expected });
+  });
+
+  it('keeps template kwargs from the extra body but always sets target_lang', async () => {
+    const { client, transport } = plamoClient(
+      'plamo-3-translate',
+      '{"chat_template_kwargs": {"form": "polite", "target_lang": "en"}, "temperature": 0.2}',
+    );
+
+    await client.translate('Hello', 'ja');
+    expect(bodyOf(transport)).toMatchObject({
+      chat_template_kwargs: { form: 'polite', target_lang: 'ja' },
+      temperature: 0.2,
+    });
+  });
+
+  it('translates a batch with one request per text', async () => {
+    const { client, transport } = plamoClient('plamo-3-translate');
+    transport.mockImplementation(async (request) => ({
+      ...okResult,
+      content: `ja:${(request.body.messages as { content: string }[])[0]?.content}`,
+    }));
+
+    await expect(client.translateBatch(['a', 'b', 'c'], 'ja')).resolves.toEqual(['ja:a', 'ja:b', 'ja:c']);
+    expect(transport).toHaveBeenCalledTimes(3);
+  });
+});
