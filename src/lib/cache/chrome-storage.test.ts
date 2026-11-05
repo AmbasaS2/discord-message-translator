@@ -3,6 +3,16 @@ import { ChromeStorageCache } from './chrome-storage';
 import type { TranslationCacheEntry } from '@/types/cache';
 import { mockedAsync } from '../../../vitest.setup';
 
+// Serves chrome.storage.local.get by requested key, because cache entries and
+// the cacheTTLDays setting now live in the same storage area.
+const mockLocalStorage = (data: Record<string, unknown>) =>
+  mockedAsync(chrome.storage.local.get).mockImplementation(async (keys?: unknown) => {
+    if (keys == null) return data;
+    return Object.fromEntries(
+      (keys as string[]).filter((key) => key in data).map((key) => [key, data[key]]),
+    );
+  });
+
 describe('ChromeStorageCache', () => {
   let cache: ChromeStorageCache;
 
@@ -19,22 +29,22 @@ describe('ChromeStorageCache', () => {
         timestamp: Date.now(),
       };
 
-      mockedAsync(chrome.storage.local.get).mockResolvedValue({
+      mockLocalStorage({
         [`cache_${messageId}`]: entry,
+        cacheTTLDays: 7,
       });
-
-      mockedAsync(chrome.storage.sync.get).mockResolvedValue({ cacheTTLDays: 7 });
 
       const result = await cache.get(messageId);
 
       expect(result).toEqual(entry);
       expect(chrome.storage.local.get).toHaveBeenCalledWith([`cache_${messageId}`]);
+      expect(chrome.storage.local.get).toHaveBeenCalledWith(['cacheTTLDays']);
     });
 
     it('should return null if entry does not exist', async () => {
       const messageId = 'non-existent';
 
-      mockedAsync(chrome.storage.local.get).mockResolvedValue({});
+      mockLocalStorage({});
 
       const result = await cache.get(messageId);
 
@@ -48,11 +58,30 @@ describe('ChromeStorageCache', () => {
         timestamp: Date.now() - 10 * 24 * 60 * 60 * 1000, // 10 days ago
       };
 
-      mockedAsync(chrome.storage.local.get).mockResolvedValue({
+      mockLocalStorage({
         [`cache_${messageId}`]: expiredEntry,
+        cacheTTLDays: 7,
       });
+      mockedAsync(chrome.storage.local.remove).mockResolvedValue(undefined);
 
-      mockedAsync(chrome.storage.sync.get).mockResolvedValue({ cacheTTLDays: 7 });
+      const result = await cache.get(messageId);
+
+      expect(result).toBeNull();
+      expect(chrome.storage.local.remove).toHaveBeenCalledWith([`cache_${messageId}`]);
+    });
+
+    it('should use the stored cacheTTLDays from local storage', async () => {
+      const messageId = 'test-message-short-ttl';
+      const entry: TranslationCacheEntry = {
+        translations: { en: 'Two days old' },
+        timestamp: Date.now() - 2 * 24 * 60 * 60 * 1000, // 2 days ago
+      };
+
+      // Within the 7-day default, so it only expires if the stored 1-day TTL is read.
+      mockLocalStorage({
+        [`cache_${messageId}`]: entry,
+        cacheTTLDays: 1,
+      });
       mockedAsync(chrome.storage.local.remove).mockResolvedValue(undefined);
 
       const result = await cache.get(messageId);
@@ -150,12 +179,11 @@ describe('ChromeStorageCache', () => {
         timestamp: now - 10 * 24 * 60 * 60 * 1000, // 10 days ago
       };
 
-      mockedAsync(chrome.storage.local.get).mockResolvedValue({
+      mockLocalStorage({
         cache_valid: validEntry,
         cache_expired: expiredEntry,
+        cacheTTLDays: 7,
       });
-
-      mockedAsync(chrome.storage.sync.get).mockResolvedValue({ cacheTTLDays: 7 });
       mockedAsync(chrome.storage.local.remove).mockResolvedValue(undefined);
 
       await cache.cleanupExpired();
@@ -166,9 +194,8 @@ describe('ChromeStorageCache', () => {
 
   describe('getStats', () => {
     it('should return stats for empty cache', async () => {
-      mockedAsync(chrome.storage.local.get).mockResolvedValue({});
+      mockLocalStorage({ cacheTTLDays: 7 });
       mockedAsync(chrome.storage.local.getBytesInUse).mockResolvedValue(0);
-      mockedAsync(chrome.storage.sync.get).mockResolvedValue({ cacheTTLDays: 7 });
 
       const stats = await cache.getStats();
 
@@ -190,13 +217,13 @@ describe('ChromeStorageCache', () => {
         timestamp: now,
       };
 
-      mockedAsync(chrome.storage.local.get).mockResolvedValue({
+      mockLocalStorage({
         cache_message1: entry1,
         cache_message2: entry2,
+        cacheTTLDays: 7,
       });
 
       mockedAsync(chrome.storage.local.getBytesInUse).mockResolvedValue(5 * 1024 * 1024); // 5MB
-      mockedAsync(chrome.storage.sync.get).mockResolvedValue({ cacheTTLDays: 7 });
 
       const stats = await cache.getStats();
 
@@ -222,14 +249,14 @@ describe('ChromeStorageCache', () => {
         timestamp: now - 8 * 24 * 60 * 60 * 1000, // 8 days ago
       };
 
-      mockedAsync(chrome.storage.local.get).mockResolvedValue({
+      mockLocalStorage({
         cache_valid: validEntry,
         cache_expired1: expiredEntry1,
         cache_expired2: expiredEntry2,
+        cacheTTLDays: 7,
       });
 
       mockedAsync(chrome.storage.local.getBytesInUse).mockResolvedValue(2 * 1024 * 1024); // 2MB
-      mockedAsync(chrome.storage.sync.get).mockResolvedValue({ cacheTTLDays: 7 });
 
       const stats = await cache.getStats();
 
@@ -245,12 +272,12 @@ describe('ChromeStorageCache', () => {
         timestamp: now,
       };
 
-      mockedAsync(chrome.storage.local.get).mockResolvedValue({
+      mockLocalStorage({
         cache_message1: entry,
+        cacheTTLDays: 7,
       });
 
       mockedAsync(chrome.storage.local.getBytesInUse).mockResolvedValue(9 * 1024 * 1024); // 9MB (90%)
-      mockedAsync(chrome.storage.sync.get).mockResolvedValue({ cacheTTLDays: 7 });
 
       const stats = await cache.getStats();
 
