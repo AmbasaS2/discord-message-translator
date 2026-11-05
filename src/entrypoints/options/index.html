@@ -106,45 +106,82 @@
 
         <!-- OpenAI Section -->
         <div id="openaiApiSection" class="space-y-2 hidden">
-          <div class="flex items-center justify-between">
+          <div class="flex items-center justify-between gap-2">
             <span class="text-sm font-medium" data-i18n="options_openaiCompatibleApi">OpenAI Compatible API</span>
-            <a href="https://platform.openai.com/api-keys" target="_blank" class="link link-primary text-xs" data-i18n="options_getApiKey">Get API Key</a>
+            <div class="flex items-center gap-3">
+              <a href="https://platform.openai.com/api-keys" target="_blank" class="link link-primary text-xs" data-i18n="options_getApiKey">Get API Key</a>
+              <button type="button" id="addOpenaiPreset" class="btn btn-xs btn-primary" data-i18n="options_addPreset">Add preset</button>
+            </div>
           </div>
-          <div class="relative">
-            <input type="password" id="openaiApiKey" data-i18n-placeholder="options_openaiApiKeyPlaceholder" placeholder="Enter your API key" class="input input-sm w-full pr-10" />
-            <button type="button" id="toggleOpenaiApiKeyVisibility" class="btn btn-xs btn-ghost absolute right-1 top-1">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              </svg>
-            </button>
-          </div>
-          <p class="text-xs text-base-content/60" data-i18n="options_apiKeyLocalNote">Your API key is stored locally and never shared</p>
-          <div class="flex flex-col w-full">
-            <label class="label py-0">
-              <span class="text-xs" data-i18n="options_baseUrl">Base URL</span>
-            </label>
-            <input type="text" id="openaiBaseUrl" placeholder="https://api.openai.com/v1" class="input input-sm w-full" />
-            <p class="text-xs text-base-content/60" data-i18n="options_baseUrlHint">e.g., https://api.openai.com/v1 or custom endpoint</p>
-            <button type="button" id="grantEndpointAccess" class="btn btn-sm btn-primary mt-1 self-start hidden" data-i18n="options_grantEndpointAccess">Allow access to this URL</button>
-          </div>
-          <div class="flex flex-col w-full">
-            <label class="label py-0">
-              <span class="text-xs" data-i18n="options_model">Model</span>
-            </label>
-            <input type="text" id="openaiModel" placeholder="gpt-6-luna" class="input input-sm w-full" />
-            <p class="text-xs text-base-content/60" data-i18n="options_modelHint">Model name as expected by the endpoint</p>
-          </div>
-          <div class="flex flex-col w-full">
-            <label class="label py-0">
-              <span class="text-xs" data-i18n="options_extraBody">Extra request body (JSON)</span>
-            </label>
-            <textarea id="openaiExtraBody" rows="3" spellcheck="false"
-              placeholder='{"reasoning_effort": "low"}'
-              class="textarea textarea-sm w-full font-mono"></textarea>
-            <p id="openaiExtraBodyError" class="text-xs text-error hidden"></p>
-            <p class="text-xs text-base-content/60" data-i18n="options_extraBodyHint">Optional JSON object merged into every request, e.g. {"reasoning_effort": "low"}. Set a field to null to remove it, e.g. {"max_tokens": null}.</p>
-          </div>
+
+          <ul id="openaiPresetList" class="space-y-1"></ul>
+          <p id="openaiPresetEmpty" class="text-xs text-base-content/60" data-i18n="options_presetEmpty">No presets yet. Add an OpenAI-compatible endpoint to start.</p>
+
+          <template id="openaiPresetItemTemplate">
+            <li class="flex items-center gap-2 rounded-lg bg-base-200 px-3 py-2">
+              <input type="radio" name="activeOpenaiPreset" class="radio radio-sm radio-primary" />
+              <div class="flex min-w-0 flex-1 flex-col">
+                <span data-role="name" class="text-sm font-medium truncate"></span>
+                <span data-role="meta" class="text-xs text-base-content/60 truncate"></span>
+              </div>
+              <button type="button" data-role="edit" class="btn btn-xs btn-ghost" data-i18n="options_edit">Edit</button>
+              <button type="button" data-role="delete" class="btn btn-xs btn-ghost text-error" data-i18n="options_delete">Delete</button>
+            </li>
+          </template>
+
+          <form id="openaiPresetForm" class="hidden space-y-2">
+            <div class="flex flex-col w-full">
+              <label class="label py-0" for="presetName">
+                <span class="text-xs" data-i18n="options_presetName">Name</span>
+              </label>
+              <input type="text" id="presetName" data-i18n-placeholder="options_presetNamePlaceholder" placeholder="e.g. Local llama-server" class="input input-sm w-full" />
+            </div>
+            <div class="flex flex-col w-full">
+              <label class="label py-0" for="presetBaseUrl">
+                <span class="text-xs" data-i18n="options_baseUrl">Base URL</span>
+              </label>
+              <input type="text" id="presetBaseUrl" placeholder="https://api.openai.com/v1" class="input input-sm w-full" />
+              <p class="text-xs text-base-content/60" data-i18n="options_baseUrlHint">e.g., https://api.openai.com/v1 or custom endpoint</p>
+            </div>
+            <div class="flex flex-col w-full">
+              <label class="label py-0" for="presetModel">
+                <span class="text-xs" data-i18n="options_model">Model</span>
+              </label>
+              <input type="text" id="presetModel" placeholder="gpt-6-luna" class="input input-sm w-full" />
+              <p class="text-xs text-base-content/60" data-i18n="options_modelHint">Model name as expected by the endpoint</p>
+            </div>
+            <div class="flex flex-col w-full">
+              <label class="label py-0" for="presetApiKey">
+                <span class="text-xs" data-i18n="options_apiKey">API Key</span>
+              </label>
+              <div class="relative">
+                <input type="password" id="presetApiKey" data-i18n-placeholder="options_openaiApiKeyPlaceholder" placeholder="Enter your API key" class="input input-sm w-full pr-10" />
+                <button type="button" id="togglePresetApiKeyVisibility" class="btn btn-xs btn-ghost absolute right-1 top-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                </button>
+              </div>
+              <p class="text-xs text-base-content/60" data-i18n="options_presetApiKeyHint">Optional. Leave empty for servers that need no key. Stored on this device only.</p>
+            </div>
+            <div class="flex flex-col w-full">
+              <label class="label py-0" for="presetExtraBody">
+                <span class="text-xs" data-i18n="options_extraBody">Extra request body (JSON)</span>
+              </label>
+              <textarea id="presetExtraBody" rows="3" spellcheck="false"
+                placeholder='{"reasoning_effort": "low"}'
+                class="textarea textarea-sm w-full font-mono"></textarea>
+              <p id="presetExtraBodyError" class="text-xs text-error hidden"></p>
+              <p class="text-xs text-base-content/60" data-i18n="options_extraBodyHint">Optional JSON object merged into every request, e.g. {"reasoning_effort": "low"}. Set a field to null to remove it, e.g. {"max_tokens": null}.</p>
+            </div>
+            <p id="presetTestResult" class="hidden whitespace-pre-wrap break-words text-xs"></p>
+            <div class="flex justify-end gap-2">
+              <button type="button" id="testOpenaiPreset" class="btn btn-sm btn-outline" data-i18n="options_testConnection">Test</button>
+              <button type="button" id="cancelOpenaiPreset" class="btn btn-sm btn-ghost" data-i18n="options_cancel">Cancel</button>
+              <button type="submit" id="saveOpenaiPreset" class="btn btn-sm btn-primary" data-i18n="options_save">Save</button>
+            </div>
+          </form>
         </div>
 
         <!-- Chrome Built-in message -->

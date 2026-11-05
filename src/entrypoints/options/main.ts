@@ -1,5 +1,4 @@
 import type { AvailabilityStatus } from '@/lib/api/chrome-builtin';
-import { parseExtraBody } from '@/lib/api/openai-compatible';
 import { getSettings } from '@/lib/utils/settings';
 import { createStorage } from '@/lib/cache/factory';
 import { populateLanguageSelect, setupPasswordToggle } from '@/lib/utils/dom-helpers';
@@ -8,6 +7,7 @@ import { showToast } from '@/lib/ui/toast';
 import { createAutoSaver } from '@/lib/ui/auto-save';
 import { renderCacheStats } from '@/lib/ui/cache-stats';
 import { getTranslatorApiStatus, getLanguageDetectorStatus } from '@/lib/ui/api-availability';
+import { setupOpenaiPresetEditor } from './openai-preset-editor';
 import './styles.css';
 
 // DOM elements
@@ -27,13 +27,6 @@ const deeplApiKeySection = document.getElementById('deeplApiKeySection') as HTML
 const deeplApiKeyInput = document.getElementById('deeplApiKey') as HTMLInputElement;
 const toggleDeeplApiKeyVisibility = document.getElementById('toggleDeeplApiKeyVisibility') as HTMLButtonElement;
 const openaiApiSection = document.getElementById('openaiApiSection') as HTMLDivElement;
-const openaiApiKeyInput = document.getElementById('openaiApiKey') as HTMLInputElement;
-const toggleOpenaiApiKeyVisibility = document.getElementById('toggleOpenaiApiKeyVisibility') as HTMLButtonElement;
-const openaiBaseUrlInput = document.getElementById('openaiBaseUrl') as HTMLInputElement;
-const grantEndpointAccessButton = document.getElementById('grantEndpointAccess') as HTMLButtonElement;
-const openaiModelInput = document.getElementById('openaiModel') as HTMLInputElement;
-const openaiExtraBodyInput = document.getElementById('openaiExtraBody') as HTMLTextAreaElement;
-const openaiExtraBodyError = document.getElementById('openaiExtraBodyError') as HTMLParagraphElement;
 const chromeBuiltinSection = document.getElementById('chromeBuiltinSection') as HTMLDivElement;
 const cacheTTLDaysInput = document.getElementById('cacheTTLDays') as HTMLInputElement;
 const cacheTTLValue = document.getElementById('cacheTTLValue') as HTMLSpanElement;
@@ -143,11 +136,7 @@ async function loadSettings() {
   translationModeSelect.value = settings.translationMode;
   googleApiKeyInput.value = settings.apiKeys.google || '';
   deeplApiKeyInput.value = settings.apiKeys.deepl || '';
-  openaiApiKeyInput.value = settings.apiKeys.openai || '';
-  openaiBaseUrlInput.value = settings.openaiConfig?.baseUrl || 'https://api.openai.com/v1';
-  openaiModelInput.value = settings.openaiConfig?.model || '';
-  openaiExtraBodyInput.value = settings.openaiConfig?.extraBody || '';
-  void updateEndpointAccessButton();
+  setupOpenaiPresetEditor(settings);
   cacheTTLDaysInput.value = settings.cacheTTLDays.toString();
   updateCacheTTLDisplay(settings.cacheTTLDays);
 
@@ -231,82 +220,9 @@ deeplApiKeyInput.addEventListener('input', () => {
   autoSave({ apiKeys: { deepl: apiKey || undefined } });
 });
 
-// OpenAI API Key input
-openaiApiKeyInput.addEventListener('input', () => {
-  const apiKey = openaiApiKeyInput.value.trim();
-  const baseUrl = openaiBaseUrlInput.value.trim() || 'https://api.openai.com/v1';
-  const model = openaiModelInput.value.trim();
-  autoSave({
-    apiKeys: { openai: apiKey || undefined },
-    openaiConfig: apiKey ? { baseUrl, model } : undefined,
-  });
-});
-
-// OpenAI Base URL input
-openaiBaseUrlInput.addEventListener('input', () => {
-  const baseUrl = openaiBaseUrlInput.value.trim() || 'https://api.openai.com/v1';
-  const model = openaiModelInput.value.trim();
-  autoSave({ openaiConfig: { baseUrl, model } });
-  void updateEndpointAccessButton();
-});
-
-// Without a host permission the background fetch only succeeds if the
-// endpoint answers CORS for the extension origin, which local servers often don't.
-function endpointOriginPattern(): string | null {
-  try {
-    // Match patterns without a port match every port.
-    const url = new URL(openaiBaseUrlInput.value.trim() || 'https://api.openai.com/v1');
-    return `${url.protocol}//${url.hostname}/*`;
-  } catch {
-    return null;
-  }
-}
-
-async function updateEndpointAccessButton() {
-  const origin = endpointOriginPattern();
-  const granted = origin === null || (await chrome.permissions.contains({ origins: [origin] }));
-  grantEndpointAccessButton.classList.toggle('hidden', granted);
-}
-
-grantEndpointAccessButton.addEventListener('click', async () => {
-  const origin = endpointOriginPattern();
-  if (origin === null) return;
-  // Must run directly in the click handler: the request needs a user gesture.
-  await chrome.permissions.request({ origins: [origin] });
-  await updateEndpointAccessButton();
-});
-
-// OpenAI Model input
-openaiModelInput.addEventListener('input', () => {
-  const baseUrl = openaiBaseUrlInput.value.trim() || 'https://api.openai.com/v1';
-  const model = openaiModelInput.value.trim();
-  autoSave({ openaiConfig: { baseUrl, model } });
-});
-
-// OpenAI extra request body input
-openaiExtraBodyInput.addEventListener('input', () => {
-  const text = openaiExtraBodyInput.value.trim();
-  const parsed = parseExtraBody(text);
-  if (!parsed.ok) {
-    // Not saved: a stored invalid body would make every translate call throw.
-    openaiExtraBodyError.textContent = t('options_extraBodyInvalid', [parsed.error]);
-    openaiExtraBodyError.classList.remove('hidden');
-    openaiExtraBodyInput.classList.add('textarea-error');
-    return;
-  }
-  openaiExtraBodyError.textContent = '';
-  openaiExtraBodyError.classList.add('hidden');
-  openaiExtraBodyInput.classList.remove('textarea-error');
-
-  const baseUrl = openaiBaseUrlInput.value.trim() || 'https://api.openai.com/v1';
-  const model = openaiModelInput.value.trim();
-  autoSave({ openaiConfig: { baseUrl, model, extraBody: text } });
-});
-
 // Toggle API Key visibility
 setupPasswordToggle(toggleGoogleApiKeyVisibility, googleApiKeyInput);
 setupPasswordToggle(toggleDeeplApiKeyVisibility, deeplApiKeyInput);
-setupPasswordToggle(toggleOpenaiApiKeyVisibility, openaiApiKeyInput);
 
 // Cache TTL input
 cacheTTLDaysInput.addEventListener('input', () => {
