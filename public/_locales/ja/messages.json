@@ -66,6 +66,12 @@
   "confirm_clearCache": {
     "message": "キャッシュされた翻訳をすべて削除しますか？"
   },
+  "confirm_deletePreset": {
+    "message": "プリセット「$NAME$」を削除しますか？",
+    "placeholders": {
+      "name": { "content": "$1" }
+    }
+  },
 
   "options_subtitle": {
     "message": "翻訳の設定を行います"
@@ -210,6 +216,48 @@
     "placeholders": {
       "error": { "content": "$1" }
     }
+  },
+  "options_addPreset": {
+    "message": "プリセットを追加"
+  },
+  "options_presetEmpty": {
+    "message": "プリセットがありません。OpenAI 互換エンドポイントを追加してください。"
+  },
+  "options_presetName": {
+    "message": "名前"
+  },
+  "options_presetNamePlaceholder": {
+    "message": "例: ローカルの llama-server"
+  },
+  "options_presetApiKeyHint": {
+    "message": "任意。キーが不要なサーバーでは空欄のままにしてください。この端末にのみ保存されます。"
+  },
+  "options_edit": {
+    "message": "編集"
+  },
+  "options_delete": {
+    "message": "削除"
+  },
+  "options_save": {
+    "message": "保存"
+  },
+  "options_cancel": {
+    "message": "キャンセル"
+  },
+  "options_testConnection": {
+    "message": "テスト"
+  },
+  "options_testing": {
+    "message": "テスト中..."
+  },
+  "options_testOk": {
+    "message": "接続成功: $RESULT$",
+    "placeholders": {
+      "result": { "content": "$1" }
+    }
+  },
+  "options_testPermissionDenied": {
+    "message": "この URL へのアクセスが許可されませんでした。"
   },
   "options_cacheDuration": {
     "message": "キャッシュ期間"

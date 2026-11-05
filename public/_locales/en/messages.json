@@ -66,6 +66,12 @@
   "confirm_clearCache": {
     "message": "Are you sure you want to clear all cached translations?"
   },
+  "confirm_deletePreset": {
+    "message": "Delete preset \"$NAME$\"?",
+    "placeholders": {
+      "name": { "content": "$1" }
+    }
+  },
 
   "options_subtitle": {
     "message": "Configure your translation preferences"
@@ -210,6 +216,48 @@
     "placeholders": {
       "error": { "content": "$1" }
     }
+  },
+  "options_addPreset": {
+    "message": "Add preset"
+  },
+  "options_presetEmpty": {
+    "message": "No presets yet. Add an OpenAI-compatible endpoint to start."
+  },
+  "options_presetName": {
+    "message": "Name"
+  },
+  "options_presetNamePlaceholder": {
+    "message": "e.g. Local llama-server"
+  },
+  "options_presetApiKeyHint": {
+    "message": "Optional. Leave empty for servers that need no key. Stored on this device only."
+  },
+  "options_edit": {
+    "message": "Edit"
+  },
+  "options_delete": {
+    "message": "Delete"
+  },
+  "options_save": {
+    "message": "Save"
+  },
+  "options_cancel": {
+    "message": "Cancel"
+  },
+  "options_testConnection": {
+    "message": "Test"
+  },
+  "options_testing": {
+    "message": "Testing..."
+  },
+  "options_testOk": {
+    "message": "Connected: $RESULT$",
+    "placeholders": {
+      "result": { "content": "$1" }
+    }
+  },
+  "options_testPermissionDenied": {
+    "message": "Access to this URL was not allowed."
   },
   "options_cacheDuration": {
     "message": "Cache Duration"
