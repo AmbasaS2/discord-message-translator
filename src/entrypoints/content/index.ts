@@ -25,7 +25,7 @@ export default defineContentScript({
 
     // Handle settings changes
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'sync' && changes.autoTranslate) {
+      if (area === 'local' && changes.autoTranslate) {
         if (changes.autoTranslate.newValue) {
           initializeObserver();
         } else {

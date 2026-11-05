@@ -1,5 +1,5 @@
 import { ChromeStorageCache } from '@/lib/cache/chrome-storage';
-import { DEFAULT_SETTINGS } from '@/types/settings';
+import { initializeSettings } from '@/lib/utils/settings-migration';
 import { serveCompletionRequests } from '@/lib/api/openai-background';
 
 export default defineBackground(() => {
@@ -7,12 +7,8 @@ export default defineBackground(() => {
   chrome.runtime.onInstalled.addListener(async () => {
     console.log('[Background] Extension installed/updated');
 
-    // Save default settings
-    const currentSettings = await chrome.storage.sync.get(null);
-    if (Object.keys(currentSettings).length === 0) {
-      await chrome.storage.sync.set(DEFAULT_SETTINGS);
-      console.log('[Background] Default settings initialized');
-    }
+    // Write defaults on first install, or move settings from sync to local storage
+    await initializeSettings();
 
     // Set up cache cleanup alarm (every hour)
     chrome.alarms.create('cache-cleanup', { periodInMinutes: 60 });

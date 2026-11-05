@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { getSettings, updateSettings } from './settings';
-import { DEFAULT_SETTINGS } from '@/types/settings';
+import { DEFAULT_SETTINGS, SETTINGS_KEYS } from '@/types/settings';
 import { mockedAsync } from '../../../vitest.setup';
 
 describe('Settings Utilities', () => {
@@ -10,11 +10,19 @@ describe('Settings Utilities', () => {
 
   describe('getSettings', () => {
     it('should return default settings when no settings are stored', async () => {
-      mockedAsync(chrome.storage.sync.get).mockResolvedValue({});
+      mockedAsync(chrome.storage.local.get).mockResolvedValue({});
 
       const result = await getSettings();
 
       expect(result).toEqual(DEFAULT_SETTINGS);
+    });
+
+    it('should read only the settings keys, never the whole storage', async () => {
+      mockedAsync(chrome.storage.local.get).mockResolvedValue({});
+
+      await getSettings();
+
+      expect(chrome.storage.local.get).toHaveBeenCalledWith(SETTINGS_KEYS);
     });
 
     it('should merge stored settings with defaults', async () => {
@@ -23,7 +31,7 @@ describe('Settings Utilities', () => {
         autoTranslate: false,
       };
 
-      mockedAsync(chrome.storage.sync.get).mockResolvedValue(storedSettings);
+      mockedAsync(chrome.storage.local.get).mockResolvedValue(storedSettings);
 
       const result = await getSettings();
 
@@ -42,7 +50,7 @@ describe('Settings Utilities', () => {
         targetLanguage: 'ja',
       };
 
-      mockedAsync(chrome.storage.sync.get).mockResolvedValue(storedSettings);
+      mockedAsync(chrome.storage.local.get).mockResolvedValue(storedSettings);
 
       const result = await getSettings();
 
@@ -58,11 +66,11 @@ describe('Settings Utilities', () => {
         autoTranslate: false,
       };
 
-      mockedAsync(chrome.storage.sync.set).mockResolvedValue(undefined);
+      mockedAsync(chrome.storage.local.set).mockResolvedValue(undefined);
 
       await updateSettings(updates);
 
-      expect(chrome.storage.sync.set).toHaveBeenCalledWith(updates);
+      expect(chrome.storage.local.set).toHaveBeenCalledWith(updates);
     });
 
     it('should allow partial updates', async () => {
@@ -70,22 +78,22 @@ describe('Settings Utilities', () => {
         cacheTTLDays: 14,
       };
 
-      mockedAsync(chrome.storage.sync.set).mockResolvedValue(undefined);
+      mockedAsync(chrome.storage.local.set).mockResolvedValue(undefined);
 
       await updateSettings(updates);
 
-      expect(chrome.storage.sync.set).toHaveBeenCalledWith(updates);
+      expect(chrome.storage.local.set).toHaveBeenCalledWith(updates);
     });
 
     it('should keep extraBody when openaiConfig is updated without it', async () => {
-      mockedAsync(chrome.storage.sync.get).mockResolvedValue({
+      mockedAsync(chrome.storage.local.get).mockResolvedValue({
         openaiConfig: { baseUrl: 'a', model: 'm0', extraBody: '{"a":1}' },
       });
-      mockedAsync(chrome.storage.sync.set).mockResolvedValue(undefined);
+      mockedAsync(chrome.storage.local.set).mockResolvedValue(undefined);
 
       await updateSettings({ openaiConfig: { baseUrl: 'b', model: 'm' } });
 
-      expect(chrome.storage.sync.set).toHaveBeenCalledWith({
+      expect(chrome.storage.local.set).toHaveBeenCalledWith({
         openaiConfig: { baseUrl: 'b', model: 'm', extraBody: '{"a":1}' },
       });
     });
@@ -97,11 +105,11 @@ describe('Settings Utilities', () => {
         },
       };
 
-      mockedAsync(chrome.storage.sync.set).mockResolvedValue(undefined);
+      mockedAsync(chrome.storage.local.set).mockResolvedValue(undefined);
 
       await updateSettings(updates);
 
-      expect(chrome.storage.sync.set).toHaveBeenCalledWith(updates);
+      expect(chrome.storage.local.set).toHaveBeenCalledWith(updates);
     });
   });
 });
