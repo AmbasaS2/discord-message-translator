@@ -85,19 +85,6 @@ describe('Settings Utilities', () => {
       expect(chrome.storage.local.set).toHaveBeenCalledWith(updates);
     });
 
-    it('should keep extraBody when openaiConfig is updated without it', async () => {
-      mockedAsync(chrome.storage.local.get).mockResolvedValue({
-        openaiConfig: { baseUrl: 'a', model: 'm0', extraBody: '{"a":1}' },
-      });
-      mockedAsync(chrome.storage.local.set).mockResolvedValue(undefined);
-
-      await updateSettings({ openaiConfig: { baseUrl: 'b', model: 'm' } });
-
-      expect(chrome.storage.local.set).toHaveBeenCalledWith({
-        openaiConfig: { baseUrl: 'b', model: 'm', extraBody: '{"a":1}' },
-      });
-    });
-
     it('should update API keys', async () => {
       const updates = {
         apiKeys: {

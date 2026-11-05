@@ -14,17 +14,9 @@ export interface Settings {
   apiKeys: {
     google?: string;
     deepl?: string;
-    openai?: string; // Legacy single OpenAI-compatible key; replaced by openaiPresets
   };
   openaiPresets: OpenAIPreset[];
   activeOpenaiPresetId: string | null;
-  // Legacy single OpenAI-compatible config; replaced by openaiPresets
-  openaiConfig?: {
-    baseUrl: string; // e.g., https://api.openai.com/v1
-    model: string;   // model name as expected by the endpoint
-    // Raw JSON object text merged into each chat-completions request body.
-    extraBody?: string;
-  };
 
   // Translation settings
   targetLanguage: string; // e.g., "ja", "en", "de"

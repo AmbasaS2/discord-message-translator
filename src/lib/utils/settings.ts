@@ -27,13 +27,5 @@ export async function updateSettings(updates: Partial<Settings>): Promise<void> 
     };
   }
 
-  // Deep merge openaiConfig object
-  if (updates.openaiConfig) {
-    merged.openaiConfig = {
-      ...current.openaiConfig,
-      ...updates.openaiConfig,
-    };
-  }
-
   await chrome.storage.local.set(merged);
 }
