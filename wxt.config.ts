@@ -4,7 +4,7 @@ export default defineConfig({
   srcDir: 'src',
   manifest: {
     name: '__MSG_extensionName__',
-    version: '1.5.0',
+    version: '2.0.1',
     description: '__MSG_extensionDescription__',
     default_locale: 'en',
     permissions: ['storage', 'alarms'],
