@@ -2,16 +2,25 @@
 
 Based on [yuiAs/discord-message-translator](https://github.com/yuiAs/discord-message-translator) 2.1.0 (MIT). Original author and license are retained.
 
-## Development branch features (not yet browser-validated)
+## Install from a release
+
+1. Download the ZIP named `discord-message-translator-basa-*-chrome-mv3.zip` from [GitHub Releases](https://github.com/AmbasaS2/discord-message-translator/releases).
+2. Extract it to a folder you plan to keep. The folder should contain `manifest.json` directly.
+3. In Chrome, open `chrome://extensions/`, enable **Developer mode**, select **Load unpacked**, and choose the extracted folder.
+4. Open or refresh Discord. Chrome Built-in Translator works without an API key. Chrome may download a language model the first time you use a language pair.
+
+### Update an existing installation
+
+1. Download and extract the newer release ZIP.
+2. Replace the contents of the currently loaded folder with the new extracted files, keeping the same folder path and extension entry. If Chrome is using files in that folder, close Chrome before replacing them.
+3. On `chrome://extensions/`, click **Reload** on the Discord Message Translator · Basa card, then refresh any open Discord tabs. Keeping the same extension entry preserves its locally saved settings.
+
+## Basa fork features
 
 - Additional visible translation targets: channel/category labels, forum titles/descriptions, and search results. These share the existing mutation/intersection observers and request queue. Label rendering uses CSS pseudo-elements, not replacement of Discord's React-owned text nodes.
 - Optional draft translation controls appear after focusing a composer. Translation is explicit, never automatically submitted. A changed or rich draft is left intact; a copyable translation is shown instead. Draft provider, target language and OpenAI preset can be set separately.
 - Nested list hierarchy is reconstructed independently of the DOM observation layer.
 - Korean UI localization and per-surface toggles in the popup.
-
-No additional polling or observer instances are introduced. The browser layout selectors, editing pipeline, and performance still require real Discord validation before release.
-
-
 
 Chrome Extension to automatically translate Discord messages with Google Translate, DeepL, or OpenAI-compatible APIs.
 
@@ -27,7 +36,7 @@ Chrome Extension to automatically translate Discord messages with Google Transla
 - **Cache Visualization**: Monitor cache usage and storage statistics
 - **Modern UI**: Built with DaisyUI and Tailwind CSS
 
-## Setup
+## Build from source
 
 ### 1. Install Dependencies
 
