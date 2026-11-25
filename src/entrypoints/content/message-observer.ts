@@ -93,15 +93,20 @@ export class MessageTranslationObserver {
     // Mutation Observer: Detect new messages and register with Intersection Observer
     this.mutationObserver = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
+        const target = mutation.target;
+        if (target instanceof Element && target.closest('.discord-translator-translation, .discord-translator-original, .basa-draft-tools')) return;
+        const ordinaryChat = target instanceof Element &&
+          target.closest('[id^="chat-messages-"], [id^="message-content-"], [id^="message-accessories-"]') !== null &&
+          !isSearchSurface(target);
         mutation.removedNodes.forEach((node) => {
-          if (node instanceof Element && !node.closest('[id^="chat-messages-"]')) this.surfaces.releaseSubtree(node);
+          if (node instanceof Element && !ordinaryChat && !node.isConnected) this.surfaces.releaseSubtree(node);
         });
-        if (mutation.target instanceof Element) this.surfaces.refreshParent(mutation.target);
+        if (!ordinaryChat && target instanceof Element) this.surfaces.refreshParent(target);
         mutation.addedNodes.forEach((node) => {
           if (node.nodeType === Node.ELEMENT_NODE) {
             const element = node as HTMLElement;
             if (element.closest('.discord-translator-translation, .discord-translator-original, .basa-draft-tools')) return;
-            this.surfaces.scan(element);
+            if (!ordinaryChat) this.surfaces.scan(element);
             if (isSearchSurface(element)) return;
 
             // Check if the added element is a message container
@@ -569,7 +574,7 @@ export class MessageTranslationObserver {
     translatedBlocks: Array<{ block: StructuredBlock; translation: string }>,
     mode: 'replace' | 'append'
   ) {
-    if (contentElement.querySelector('.discord-translator-translation')) {
+    if (!this.active || !contentElement.isConnected || contentElement.querySelector('.discord-translator-translation')) {
       return;
     }
 
@@ -603,7 +608,7 @@ export class MessageTranslationObserver {
     mode: 'replace' | 'append'
   ) {
     // Check if already translated (avoid duplicate injections)
-    if (contentElement.querySelector('.discord-translator-translation')) {
+    if (!this.active || !contentElement.isConnected || contentElement.querySelector('.discord-translator-translation')) {
       return;
     }
 
@@ -656,7 +661,7 @@ export class MessageTranslationObserver {
     mode: 'replace' | 'append'
   ) {
     // Check if already translated (avoid duplicate injections)
-    if (sectionElement.querySelector('.discord-translator-translation')) {
+    if (!this.active || !sectionElement.isConnected || sectionElement.querySelector('.discord-translator-translation')) {
       return;
     }
 

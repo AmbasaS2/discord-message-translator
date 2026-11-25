@@ -65,7 +65,7 @@ export class SurfaceTranslator {
     if (!this.selector || !root.isConnected || isOwnContent(root)) return;
     if (root.closest('[id^="chat-messages-"]') && !isSearchSurface(root)) return;
     if (root instanceof HTMLElement && root.matches(this.selector)) this.register(root);
-    root.querySelectorAll<HTMLElement>(this.selector).forEach((element) => this.register(element));
+    if (root.childElementCount) root.querySelectorAll<HTMLElement>(this.selector).forEach((element) => this.register(element));
   }
 
   refreshParent(root: Element): void {
@@ -77,7 +77,7 @@ export class SurfaceTranslator {
   private register(element: HTMLElement): void {
     if (!element.isConnected || isOwnContent(element) || !this.settings || !this.selector) return;
     // Prefer the innermost matching label so nested title wrappers are not translated twice.
-    if (element.querySelector(this.selector)) return;
+    if (element.childElementCount && element.querySelector(this.selector)) return;
     const kind = this.kind(element);
     if (!kind) return;
     const source = surfaceText(element);
@@ -113,7 +113,7 @@ export class SurfaceTranslator {
   releaseSubtree(root: Element): void {
     if (!this.selector || root.isConnected) return;
     if (root instanceof HTMLElement && this.states.has(root)) this.release(root);
-    root.querySelectorAll<HTMLElement>('[data-basa-surface]').forEach((element) => this.release(element));
+    if (root.childElementCount) root.querySelectorAll<HTMLElement>('[data-basa-surface]').forEach((element) => this.release(element));
   }
 
   private release(element: HTMLElement): void {

@@ -1,5 +1,6 @@
 import { MessageTranslationObserver } from './message-observer';
 import { DraftTranslator } from './draft-translator';
+import { getSettings } from '@/lib/utils/settings';
 import './basa-content.css';
 
 export default defineContentScript({
@@ -20,11 +21,17 @@ export default defineContentScript({
       observer.start();
     }
 
-    // Initialize after page load complete
+    // Do not start observers when automatic translation is disabled.
+    let observerRevision = 0;
+    async function initializeIfEnabled() {
+      const revision = ++observerRevision;
+      const settings = await getSettings();
+      if (revision === observerRevision && settings.autoTranslate) initializeObserver();
+    }
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', initializeObserver);
+      document.addEventListener('DOMContentLoaded', () => { void initializeIfEnabled(); }, { once: true });
     } else {
-      initializeObserver();
+      void initializeIfEnabled();
     }
 
     // Handle settings changes
@@ -40,6 +47,7 @@ export default defineContentScript({
         void observer?.refreshSurfaceSettings();
       }
       if (area === 'local' && changes.autoTranslate) {
+        observerRevision++;
         if (changes.autoTranslate.newValue) {
           initializeObserver();
         } else {
