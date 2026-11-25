@@ -187,3 +187,23 @@ describe('assembleTranslation', () => {
     expect(container.querySelector('h2')?.textContent).toBe('Sub');
   });
 });
+
+describe('nested list structure', () => {
+  it('translates each item separately and rebuilds the nested list', () => {
+    const blocks = extractBlocks(makeMessageContent(
+      '<ul><li>Parent<ol><li>First<ul><li>Deep</li></ul></li><li>Second</li></ol></li><li>Sibling</li></ul>'
+    ));
+    expect(blocks.map((block) => block.text)).toEqual(['Parent', 'First', 'Deep', 'Second', 'Sibling']);
+    const result = assembleTranslation(blocks.map((block) => ({ block, translation: block.text })));
+    expect(result.querySelectorAll(':scope > ul > li')).toHaveLength(2);
+    expect(result.querySelectorAll(':scope > ul > li > ol > li')).toHaveLength(2);
+    expect(result.querySelector('ol > li > ul > li')?.textContent).toBe('Deep');
+  });
+
+  it('keeps adjacent lists separate and supports parents with no text', () => {
+    const blocks = extractBlocks(makeMessageContent('<ul><li>A</li></ul><ul><li><ol><li>B</li></ol></li></ul>'));
+    const result = assembleTranslation(blocks.map((block) => ({ block, translation: block.text })));
+    expect(result.querySelectorAll(':scope > ul')).toHaveLength(2);
+    expect(result.querySelector('ul > li > ol > li')?.textContent).toBe('B');
+  });
+});

@@ -31,9 +31,16 @@ export interface Placeholder {
   node: Node;
 }
 
+export interface ListPosition {
+  listId: number;
+  itemIndex: number;
+  tag: 'ul' | 'ol';
+}
+
 export interface StructuredBlock {
   tagName: BlockTag;
   listContext?: 'ul' | 'ol';
+  listPath?: ListPosition[];
   text: string;
   placeholders: Placeholder[];
 }
@@ -61,7 +68,7 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function extractTextWithPlaceholders(source: Node, state: ExtractionState): string {
+function extractTextWithPlaceholders(source: Node, state: ExtractionState, skipNestedLists = false): string {
   if (source.nodeType === Node.TEXT_NODE) {
     return source.textContent ?? '';
   }
@@ -71,7 +78,7 @@ function extractTextWithPlaceholders(source: Node, state: ExtractionState): stri
 
   const el = source as HTMLElement;
 
-  if (el.matches(HIDDEN_SELECTOR)) {
+  if (el.matches(HIDDEN_SELECTOR) || (skipNestedLists && /^(UL|OL)$/.test(el.tagName))) {
     return '';
   }
 
@@ -89,7 +96,7 @@ function extractTextWithPlaceholders(source: Node, state: ExtractionState): stri
 
   let out = '';
   el.childNodes.forEach((child) => {
-    out += extractTextWithPlaceholders(child, state);
+    out += extractTextWithPlaceholders(child, state, skipNestedLists);
   });
   return out;
 }
@@ -125,6 +132,7 @@ function flushParagraphSegments(
  */
 export function extractBlocks(contentElement: HTMLElement): StructuredBlock[] {
   const blocks: StructuredBlock[] = [];
+  let nextListId = 0;
   const state: ExtractionState = {
     mentionCount: 0,
     channelCount: 0,
@@ -155,14 +163,22 @@ export function extractBlocks(contentElement: HTMLElement): StructuredBlock[] {
     }
   };
 
-  const collectList = (list: HTMLElement, listContext: 'ul' | 'ol') => {
-    list.querySelectorAll(':scope > li').forEach((li) => {
+  const collectList = (list: Element, listContext: 'ul' | 'ol', parents: ListPosition[] = []) => {
+    const listId = nextListId++;
+    Array.from(list.children).filter((child) => child.tagName === 'LI').forEach((li, itemIndex) => {
+      const path = [...parents, { listId, itemIndex, tag: listContext }];
       const sub = createSubState(state);
-      const text = extractTextWithPlaceholders(li, sub).trim();
+      // Nested items are translated separately rather than concatenated with their parent.
+      const text = extractTextWithPlaceholders(li, sub, true).trim();
       mergeSubState(state, sub);
       if (text) {
-        blocks.push({ tagName: 'li', listContext, text, placeholders: sub.placeholders });
+        blocks.push({ tagName: 'li', listContext, listPath: path, text, placeholders: sub.placeholders });
       }
+      li.querySelectorAll('ul, ol').forEach((nested) => {
+        if (nested.parentElement?.closest('li') === li) {
+          collectList(nested, nested.tagName === 'OL' ? 'ol' : 'ul', path);
+        }
+      });
     });
   };
 
@@ -190,6 +206,7 @@ export function extractBlocks(contentElement: HTMLElement): StructuredBlock[] {
         flush();
         collectList(el, 'ol');
         return;
+      case 'P':
       case 'BLOCKQUOTE':
         flush();
         collectHeading(el, 'p');
@@ -257,8 +274,38 @@ export function assembleTranslation(
 
   let currentList: HTMLElement | null = null;
   let currentListContext: 'ul' | 'ol' | null = null;
+  const lists = new Map<number, HTMLElement>();
+  const items = new Map<string, HTMLElement>();
+
+  function ensureListItem(path: ListPosition[]): HTMLElement {
+    let parent: HTMLElement = container;
+    for (const position of path) {
+      let list = lists.get(position.listId);
+      if (!list) {
+        list = document.createElement(position.tag);
+        parent.appendChild(list);
+        lists.set(position.listId, list);
+      }
+      const key = `${position.listId}:${position.itemIndex}`;
+      let item = items.get(key);
+      if (!item) {
+        item = document.createElement('li');
+        list.appendChild(item);
+        items.set(key, item);
+      }
+      parent = item;
+    }
+    return parent;
+  }
 
   for (const { block, translation } of translatedBlocks) {
+    if (block.tagName === 'li' && block.listPath?.length) {
+      currentList = null;
+      currentListContext = null;
+      const item = ensureListItem(block.listPath);
+      item.prepend(buildInlineFromTranslation(translation, block.placeholders));
+      continue;
+    }
     if (block.tagName === 'li') {
       const listTag = block.listContext ?? 'ul';
       if (!currentList || currentListContext !== listTag) {

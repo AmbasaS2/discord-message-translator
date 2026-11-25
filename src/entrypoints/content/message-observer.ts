@@ -403,7 +403,7 @@ export class MessageTranslationObserver {
       const hasStructure =
         blocks.length > 1 || blocks.some((b) => b.tagName !== 'p');
       if (hasStructure && blocks.length > 0) {
-        const entries = blocks.map((block, i) => ({ block, id: `${item.id}-b${i}` }));
+        const entries = blocks.map((block, i) => ({ block, id: `${item.id}-basa-structure-v1-b${i}` }));
         return {
           kind: 'structured',
           element: item.element,
