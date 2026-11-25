@@ -5,6 +5,7 @@ import { RequestQueue, debounce } from '@/lib/utils/async-control';
 import { ChromeLanguageDetector } from '@/lib/api/chrome-language-detector';
 import { extractBlocks, assembleTranslation, type StructuredBlock } from '@/lib/utils/structure-preserving';
 import { shouldSkipText } from './language-skip';
+import { SurfaceTranslator, isSearchSurface } from './surface-translator';
 
 /**
  * Generate a unique key for tracking translated elements
@@ -39,6 +40,10 @@ const LANGUAGE_DETECTION_MIN_CONFIDENCE = 0.7; // Minimum confidence for languag
 export class MessageTranslationObserver {
   private intersectionObserver: IntersectionObserver;
   private mutationObserver: MutationObserver;
+  private surfaces: SurfaceTranslator;
+  private surfaceWorkScheduled = false;
+  private active = false;
+  private surfaceSettingsRevision = 0;
   private observedMessages = new Set<string>(); // Message IDs already being observed
   private translatedMessages = new Set<string>(); // Message IDs already translated (for main content)
   private translatedElements = new Set<string>(); // Element keys already translated (includes reply contexts)
@@ -63,6 +68,7 @@ export class MessageTranslationObserver {
       (entries) => {
         // Collect all intersecting messages
         entries.forEach((entry) => {
+          if (this.surfaces.handleIntersection(entry)) return;
           if (entry.isIntersecting) {
             const messageElement = entry.target as HTMLElement;
             const message = createDiscordMessage(messageElement);
@@ -82,12 +88,21 @@ export class MessageTranslationObserver {
       }
     );
 
+    this.surfaces = new SurfaceTranslator(this.intersectionObserver);
+
     // Mutation Observer: Detect new messages and register with Intersection Observer
     this.mutationObserver = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
+        mutation.removedNodes.forEach((node) => {
+          if (node instanceof Element && !node.closest('[id^="chat-messages-"]')) this.surfaces.releaseSubtree(node);
+        });
+        if (mutation.target instanceof Element) this.surfaces.refreshParent(mutation.target);
         mutation.addedNodes.forEach((node) => {
           if (node.nodeType === Node.ELEMENT_NODE) {
             const element = node as HTMLElement;
+            if (element.closest('.discord-translator-translation, .discord-translator-original, .basa-draft-tools')) return;
+            this.surfaces.scan(element);
+            if (isSearchSurface(element)) return;
 
             // Check if the added element is a message container
             if (element.id?.startsWith('chat-messages-')) {
@@ -113,6 +128,8 @@ export class MessageTranslationObserver {
 
   start() {
     console.log('[MessageObserver] Starting...');
+    this.active = true;
+    void this.refreshSurfaceSettings();
 
     // Add existing messages to observation list
     // Use multiple selectors for better compatibility
@@ -147,7 +164,14 @@ export class MessageTranslationObserver {
     console.log(`[MessageObserver] Observing ${uniqueMessages.size} existing messages`);
   }
 
+  async refreshSurfaceSettings(): Promise<void> {
+    const revision = ++this.surfaceSettingsRevision;
+    const settings = await getSettings();
+    if (this.active && revision === this.surfaceSettingsRevision) this.surfaces.configure(settings);
+  }
+
   private observeMessage(element: HTMLElement) {
+    if (isSearchSurface(element)) return;
     const message = createDiscordMessage(element);
     if (message && !this.observedMessages.has(message.id)) {
       this.observedMessages.add(message.id);
@@ -186,7 +210,9 @@ export class MessageTranslationObserver {
    * Uses batch translation API when multiple messages are pending
    */
   private async processPendingMessages() {
+    if (!this.active) return;
     if (this.pendingMessages.size === 0) {
+      this.scheduleSurfaceWork();
       return;
     }
 
@@ -211,6 +237,7 @@ export class MessageTranslationObserver {
     );
 
     if (filteredMessages.length === 0) {
+      this.scheduleSurfaceWork();
       return;
     }
 
@@ -234,6 +261,20 @@ export class MessageTranslationObserver {
         });
       }
     }
+    this.scheduleSurfaceWork();
+  }
+
+  private scheduleSurfaceWork(): void {
+    if (!this.active || this.surfaceWorkScheduled || !this.surfaces.hasPending()) return;
+    this.surfaceWorkScheduled = true;
+    // At most one auxiliary batch is queued; incoming messages retain priority.
+    void this.translationQueue.add(async () => {
+      if (this.active) await this.surfaces.process(await getSettings());
+    }).catch((error) => console.warn('[SurfaceTranslator] Translation failed:', error))
+      .finally(() => {
+        this.surfaceWorkScheduled = false;
+        if (this.active && this.surfaces.hasPending()) this.processPendingDebounced();
+      });
   }
 
   /**
@@ -650,6 +691,9 @@ export class MessageTranslationObserver {
 
   stop() {
     console.log('[MessageObserver] Stopping...');
+    this.active = false;
+    this.surfaceSettingsRevision++;
+    this.surfaces.clear();
     this.intersectionObserver.disconnect();
     this.mutationObserver.disconnect();
     this.observedMessages.clear();

@@ -1,4 +1,17 @@
-# Discord Message Translator
+# Discord Message Translator — Basa development fork
+
+Based on [yuiAs/discord-message-translator](https://github.com/yuiAs/discord-message-translator) 2.1.0 (MIT). Original author and license are retained.
+
+## Development branch features (not yet browser-validated)
+
+- Additional visible translation targets: channel/category labels, forum titles/descriptions, and search results. These share the existing mutation/intersection observers and request queue. Label rendering uses CSS pseudo-elements, not replacement of Discord's React-owned text nodes.
+- Optional draft translation controls appear after focusing a composer. Translation is explicit, never automatically submitted. A changed or rich draft is left intact; a copyable translation is shown instead. Draft provider, target language and OpenAI preset can be set separately.
+- Nested list hierarchy is reconstructed independently of the DOM observation layer.
+- Korean UI localization and per-surface toggles in the popup.
+
+No additional polling or observer instances are introduced. The browser layout selectors, editing pipeline, and performance still require real Discord validation before release.
+
+
 
 Chrome Extension to automatically translate Discord messages with Google Translate, DeepL, or OpenAI-compatible APIs.
 

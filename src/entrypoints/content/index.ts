@@ -32,6 +32,13 @@ export default defineContentScript({
       if (area === 'local' && changes.draftEnabled) {
         void draft.configure();
       }
+      if (area === 'local' && !changes.autoTranslate && [
+        'translateNavigation', 'translateForum', 'translateSearch',
+        'targetLanguage', 'translationProvider', 'activeOpenaiPresetId', 'openaiPresets',
+        'apiKeys', 'skipTargetLanguage'
+      ].some((key) => key in changes)) {
+        void observer?.refreshSurfaceSettings();
+      }
       if (area === 'local' && changes.autoTranslate) {
         if (changes.autoTranslate.newValue) {
           initializeObserver();

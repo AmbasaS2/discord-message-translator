@@ -27,3 +27,31 @@
   border: 1px solid var(--border-subtle, #555);
   resize: vertical;
 }
+
+[data-basa-translation]::after {
+  content: attr(data-basa-translation);
+  display: block;
+  color: var(--text-muted, #b9bbbe);
+  font-size: .95em;
+  font-weight: normal;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+[data-basa-label-mode="nav"] {
+  font-size: 0 !important;
+}
+[data-basa-label-mode="nav"]::after {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: inherit;
+  font-weight: inherit;
+  vertical-align: middle;
+}
+[data-basa-label-mode="nav"]:hover::after,
+[data-basa-label-mode="nav"]:focus-within::after {
+  content: attr(data-basa-original);
+}
