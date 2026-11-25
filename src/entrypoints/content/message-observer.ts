@@ -8,16 +8,6 @@ import { shouldSkipText } from './language-skip';
 import { SurfaceTranslator, isSearchSurface } from './surface-translator';
 
 /**
- * Generate a unique key for tracking translated elements
- * Uses element's position in DOM to distinguish reply context from main content
- */
-function getElementKey(element: HTMLElement): string {
-  const messageId = element.id?.match(/^message-content-(\d+)$/)?.[1] || '';
-  const isReplyContext = element.closest('[id^="message-reply-context-"]') !== null;
-  return `${messageId}-${isReplyContext ? 'reply' : 'main'}`;
-}
-
-/**
  * Generate a unique key for TranslatableElement
  */
 function getTranslatableElementKey(item: TranslatableElement): string {
@@ -44,11 +34,12 @@ export class MessageTranslationObserver {
   private surfaceWorkScheduled = false;
   private active = false;
   private surfaceSettingsRevision = 0;
-  private observedMessages = new Set<string>(); // Message IDs already being observed
-  private translatedMessages = new Set<string>(); // Message IDs already translated (for main content)
-  private translatedElements = new Set<string>(); // Element keys already translated (includes reply contexts)
+  // Discord can remount the same message when returning to a channel.
+  private observedMessages = new WeakMap<HTMLElement, string>();
+  private translatedMessages = new WeakSet<HTMLElement>();
+  private translatedElements = new WeakSet<HTMLElement>();
   private translationQueue: RequestQueue; // Request queue for rate limiting
-  private pendingMessages: Map<string, HTMLElement> = new Map(); // Messages waiting to be processed
+  private pendingMessages = new Map<HTMLElement, string>();
   private processPendingDebounced: () => void;
 
   // Language detection state (not persisted - resets on page reload)
@@ -66,20 +57,22 @@ export class MessageTranslationObserver {
     // Intersection Observer: Translate messages that enter the visible area
     this.intersectionObserver = new IntersectionObserver(
       (entries) => {
-        // Collect all intersecting messages
-        entries.forEach((entry) => {
-          if (this.surfaces.handleIntersection(entry)) return;
-          if (entry.isIntersecting) {
-            const messageElement = entry.target as HTMLElement;
-            const message = createDiscordMessage(messageElement);
-            if (message && !this.translatedMessages.has(message.id)) {
-              this.pendingMessages.set(message.id, messageElement);
-            }
+        for (const entry of entries) {
+          if (this.surfaces.handleIntersection(entry)) continue;
+          const element = entry.target as HTMLElement;
+          if (!element.isConnected) {
+            this.intersectionObserver.unobserve(element);
+            this.observedMessages.delete(element);
+            this.pendingMessages.delete(element);
+            continue;
           }
-        });
+          const messageId = this.observedMessages.get(element);
+          if (entry.isIntersecting && messageId && !this.translatedMessages.has(element)) {
+            this.pendingMessages.set(element, messageId);
+          }
+        }
 
-        // Process messages in batches using debounce
-        this.processPendingDebounced();
+        if (this.pendingMessages.size || this.surfaces.hasPending()) this.processPendingDebounced();
       },
       {
         root: null, // Use viewport as root
@@ -176,10 +169,10 @@ export class MessageTranslationObserver {
   }
 
   private observeMessage(element: HTMLElement) {
-    if (isSearchSurface(element)) return;
+    if (this.observedMessages.has(element) || isSearchSurface(element)) return;
     const message = createDiscordMessage(element);
-    if (message && !this.observedMessages.has(message.id)) {
-      this.observedMessages.add(message.id);
+    if (message) {
+      this.observedMessages.set(element, message.id);
       this.intersectionObserver.observe(element);
     }
   }
@@ -238,7 +231,7 @@ export class MessageTranslationObserver {
 
     // Filter out already translated messages
     const filteredMessages = messagesToProcess.filter(
-      ([messageId]) => !this.translatedMessages.has(messageId)
+      ([element]) => element.isConnected && !this.translatedMessages.has(element)
     );
 
     if (filteredMessages.length === 0) {
@@ -258,9 +251,9 @@ export class MessageTranslationObserver {
       });
     } else {
       // For small numbers, use individual translation
-      for (const [messageId, element] of filteredMessages) {
+      for (const [element, messageId] of filteredMessages) {
         this.translationQueue.add(async () => {
-          await this.handleVisibleMessage(element, messageId, settings);
+          await this.handleVisibleMessage(element, settings);
         }).catch((error) => {
           console.error(`[MessageObserver] Translation failed for message ${messageId}:`, error);
         });
@@ -288,7 +281,7 @@ export class MessageTranslationObserver {
    * Translates all translatable elements including reply contexts and embeds
    */
   private async handleVisibleMessagesBatch(
-    messagePairs: Array<[string, HTMLElement]>,
+    messagePairs: Array<[HTMLElement, string]>,
     settings: Awaited<ReturnType<typeof getSettings>>
   ) {
     // Collect all translatable elements from all message containers.
@@ -299,21 +292,19 @@ export class MessageTranslationObserver {
       contentId: string;
       content: string;
       element: HTMLElement;
-      elementKey: string;
-      parentMessageId: string;
+      parent: HTMLElement;
       type: 'message-content' | 'embed-section';
     };
     type StructuredPlan = {
       kind: 'structured';
       element: HTMLElement;
-      elementKey: string;
-      parentMessageId: string;
+      parent: HTMLElement;
       entries: Array<{ block: StructuredBlock; id: string }>;
     };
     const plans: Array<SimplePlan | StructuredPlan> = [];
 
-    for (const [messageId, container] of messagePairs) {
-      if (this.translatedMessages.has(messageId)) {
+    for (const [container] of messagePairs) {
+      if (!container.isConnected || this.translatedMessages.has(container)) {
         continue;
       }
 
@@ -321,9 +312,7 @@ export class MessageTranslationObserver {
       const translatableElements = findAllTranslatableElements(container);
 
       for (const item of translatableElements) {
-        const elementKey = getTranslatableElementKey(item);
-
-        if (this.translatedElements.has(elementKey)) {
+        if (this.translatedElements.has(item.element)) {
           continue;
         }
 
@@ -343,12 +332,12 @@ export class MessageTranslationObserver {
           );
           if (shouldSkip) {
             // Mark as translated (skipped) to avoid reprocessing
-            this.translatedElements.add(elementKey);
+            this.translatedElements.add(item.element);
             continue;
           }
         }
 
-        const plan = this.buildTranslationPlan(item, elementKey, messageId, text);
+        const plan = this.buildTranslationPlan(item, container, text);
         if (plan) {
           plans.push(plan);
         }
@@ -357,8 +346,9 @@ export class MessageTranslationObserver {
 
     if (plans.length === 0) {
       // Mark parent messages as processed even if all elements were skipped
-      for (const [messageId] of messagePairs) {
-        this.translatedMessages.add(messageId);
+      for (const [container] of messagePairs) {
+        this.translatedMessages.add(container);
+        this.intersectionObserver.unobserve(container);
       }
       return;
     }
@@ -385,40 +375,42 @@ export class MessageTranslationObserver {
       );
 
       // Inject translations into all elements
-      const translatedParentIds = new Set<string>();
+      const translatedParents = new Set<HTMLElement>();
 
       for (const plan of plans) {
         if (plan.kind === 'simple') {
           const translation = translations.get(plan.contentId);
-          if (!translation) continue;
+          if (!translation || translation === plan.content) continue;
           if (plan.type === 'embed-section') {
             this.injectTranslationToEmbedSection(plan.element, translation, settings.translationMode);
           } else {
             this.injectTranslationToElement(plan.element, translation, settings.translationMode);
           }
-          this.translatedElements.add(plan.elementKey);
-          translatedParentIds.add(plan.parentMessageId);
+          this.translatedElements.add(plan.element);
+          translatedParents.add(plan.parent);
         } else {
           const translatedBlocks = plan.entries.map(({ block, id }) => ({
             block,
             translation: translations.get(id) ?? block.text,
           }));
+          if (!translatedBlocks.some(({ block, translation }) => translation !== block.text)) continue;
           this.injectStructuredTranslationToElement(
             plan.element,
             translatedBlocks,
             settings.translationMode
           );
-          this.translatedElements.add(plan.elementKey);
-          translatedParentIds.add(plan.parentMessageId);
+          this.translatedElements.add(plan.element);
+          translatedParents.add(plan.parent);
         }
       }
 
       // Mark parent messages as translated
-      for (const parentId of translatedParentIds) {
-        this.translatedMessages.add(parentId);
+      for (const container of translatedParents) {
+        this.translatedMessages.add(container);
+        this.intersectionObserver.unobserve(container);
       }
 
-      console.log(`[MessageObserver] Batch translated ${plans.length} elements from ${translatedParentIds.size} messages`);
+      console.log(`[MessageObserver] Batch translated ${plans.length} elements from ${translatedParents.size} messages`);
     } catch (error) {
       console.error('[MessageObserver] Batch translation failed:', error);
       throw error;
@@ -435,12 +427,11 @@ export class MessageTranslationObserver {
    */
   private buildTranslationPlan(
     item: TranslatableElement,
-    elementKey: string,
-    parentMessageId: string,
+    parent: HTMLElement,
     fallbackText: string
   ):
-    | { kind: 'simple'; contentId: string; content: string; element: HTMLElement; elementKey: string; parentMessageId: string; type: 'message-content' | 'embed-section' }
-    | { kind: 'structured'; element: HTMLElement; elementKey: string; parentMessageId: string; entries: Array<{ block: StructuredBlock; id: string }> }
+    | { kind: 'simple'; contentId: string; content: string; element: HTMLElement; parent: HTMLElement; type: 'message-content' | 'embed-section' }
+    | { kind: 'structured'; element: HTMLElement; parent: HTMLElement; entries: Array<{ block: StructuredBlock; id: string }> }
     | null {
     const isReplyContext = item.element.closest('[id^="message-reply-context-"]') !== null;
 
@@ -453,8 +444,7 @@ export class MessageTranslationObserver {
         return {
           kind: 'structured',
           element: item.element,
-          elementKey,
-          parentMessageId,
+          parent,
           entries,
         };
       }
@@ -465,8 +455,7 @@ export class MessageTranslationObserver {
       contentId: item.id,
       content: fallbackText,
       element: item.element,
-      elementKey,
-      parentMessageId,
+      parent,
       type: item.type,
     };
   }
@@ -477,9 +466,10 @@ export class MessageTranslationObserver {
    */
   private async handleVisibleMessage(
     element: HTMLElement,
-    messageId: string,
     settings: Awaited<ReturnType<typeof getSettings>>
   ) {
+    if (!this.active || !element.isConnected || this.translatedMessages.has(element)) return;
+
     // Find all translatable elements (main content + reply context + embeds)
     const translatableElements = findAllTranslatableElements(element);
 
@@ -494,7 +484,7 @@ export class MessageTranslationObserver {
       const elementKey = getTranslatableElementKey(item);
 
       // Skip if this specific element is already translated
-      if (this.translatedElements.has(elementKey)) {
+      if (this.translatedElements.has(item.element)) {
         continue;
       }
 
@@ -514,12 +504,12 @@ export class MessageTranslationObserver {
         );
         if (shouldSkip) {
           // Mark as translated (skipped) to avoid reprocessing
-          this.translatedElements.add(elementKey);
+          this.translatedElements.add(item.element);
           continue;
         }
       }
 
-      const plan = this.buildTranslationPlan(item, elementKey, messageId, text);
+      const plan = this.buildTranslationPlan(item, element, text);
       if (!plan) {
         continue;
       }
@@ -531,6 +521,7 @@ export class MessageTranslationObserver {
             plan.content,
             settings.targetLanguage
           );
+          if (!translation || translation === plan.content) continue;
           if (plan.type === 'embed-section') {
             this.injectTranslationToEmbedSection(plan.element, translation, settings.translationMode);
           } else {
@@ -545,13 +536,14 @@ export class MessageTranslationObserver {
             block,
             translation: blockTranslations.get(id) ?? block.text,
           }));
+          if (!translatedBlocks.some(({ block, translation }) => translation !== block.text)) continue;
           this.injectStructuredTranslationToElement(
             plan.element,
             translatedBlocks,
             settings.translationMode
           );
         }
-        this.translatedElements.add(elementKey);
+        this.translatedElements.add(item.element);
         translatedAny = true;
       } catch (error) {
         console.error(`[MessageObserver] Translation failed for element ${elementKey}:`, error);
@@ -560,7 +552,10 @@ export class MessageTranslationObserver {
     }
 
     // Mark main message as translated
-    this.translatedMessages.add(messageId);
+    if (translatedAny) {
+      this.translatedMessages.add(element);
+      this.intersectionObserver.unobserve(element);
+    }
   }
 
   /**
@@ -701,9 +696,6 @@ export class MessageTranslationObserver {
     this.surfaces.clear();
     this.intersectionObserver.disconnect();
     this.mutationObserver.disconnect();
-    this.observedMessages.clear();
-    this.translatedMessages.clear();
-    this.translatedElements.clear();
     this.pendingMessages.clear();
     this.translationQueue.clear();
 
