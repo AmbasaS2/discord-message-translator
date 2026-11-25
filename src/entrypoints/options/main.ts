@@ -38,9 +38,6 @@ const cacheExpiredCount = document.getElementById('cacheExpiredCount') as HTMLSp
 const refreshCacheStatsButton = document.getElementById('refreshCacheStats') as HTMLButtonElement;
 const clearCacheButton = document.getElementById('clearCache') as HTMLButtonElement;
 
-let chromeBuiltinAvailable = false;
-let languageDetectorAvailable = false;
-
 const autoSave = createAutoSaver((error) => {
   console.error('[Options] Failed to save settings:', error);
   showToast(t('status_saveFailed'), 'error');
@@ -84,12 +81,10 @@ async function checkChromeBuiltinAvailability(): Promise<void> {
   translatorApiStatusBadge.className = `badge badge-sm ${supported ? 'badge-success' : 'badge-ghost'}`;
 
   if (supported) {
-    chromeBuiltinAvailable = true;
     chromeBuiltinOption.disabled = false;
     chromeBuiltinOption.textContent = t('options_chromeBuiltinFree');
     chromeBuiltinHint.style.display = 'none';
   } else {
-    chromeBuiltinAvailable = false;
     chromeBuiltinOption.disabled = true;
     chromeBuiltinOption.textContent = t('options_chromeBuiltinUnavailable');
     chromeBuiltinHint.style.display = 'block';
@@ -103,15 +98,12 @@ async function checkLanguageDetectorAvailability(): Promise<void> {
   languageDetectorApiStatusBadge.className = `badge badge-sm ${status === 'available' ? 'badge-success' : 'badge-ghost'}`;
 
   if (status !== 'unavailable') {
-    languageDetectorAvailable = true;
     skipTargetLanguageToggle.disabled = false;
     languageDetectorHint.style.display = 'none';
     return;
   }
 
-  languageDetectorAvailable = false;
   skipTargetLanguageToggle.disabled = true;
-  skipTargetLanguageToggle.checked = false;
   languageDetectorHint.style.display = 'block';
 }
 
@@ -123,13 +115,8 @@ async function loadSettings() {
   await checkChromeBuiltinAvailability();
   await checkLanguageDetectorAvailability();
 
-  // If saved provider is chrome-builtin but unavailable, fall back
-  if (settings.translationProvider === 'chrome-builtin' && !chromeBuiltinAvailable) {
-    translationProviderSelect.value = 'google';
-    autoSave({ translationProvider: 'google' });
-  } else {
-    translationProviderSelect.value = settings.translationProvider;
-  }
+  // API availability can change without the user's saved preference changing.
+  translationProviderSelect.value = settings.translationProvider;
 
   autoTranslateToggle.checked = settings.autoTranslate;
   targetLanguageSelect.value = settings.targetLanguage;
@@ -140,11 +127,7 @@ async function loadSettings() {
   cacheTTLDaysInput.value = settings.cacheTTLDays.toString();
   updateCacheTTLDisplay(settings.cacheTTLDays);
 
-  if (languageDetectorAvailable) {
-    skipTargetLanguageToggle.checked = settings.skipTargetLanguage;
-  } else if (settings.skipTargetLanguage) {
-    autoSave({ skipTargetLanguage: false });
-  }
+  skipTargetLanguageToggle.checked = settings.skipTargetLanguage;
 
   // Show correct API section
   updateApiSectionVisibility(translationProviderSelect.value);

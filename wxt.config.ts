@@ -3,7 +3,7 @@ import { defineConfig } from 'wxt';
 export default defineConfig({
   srcDir: 'src',
   manifest: {
-    name: '__MSG_extensionName__',
+    name: 'Discord Message Translator · Basa',
     version: '2.1.0',
     description: '__MSG_extensionDescription__',
     default_locale: 'en',

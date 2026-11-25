@@ -104,7 +104,7 @@ describe('initializeSettings', () => {
     expect(chrome.storage.sync.clear).toHaveBeenCalledTimes(1);
   });
 
-  it('writes defaults when both areas are empty and does not clear sync', async () => {
+  it('writes legacy defaults for an update with empty storage without clearing sync', async () => {
     mockedAsync(chrome.storage.sync.get).mockResolvedValue({});
     mockedAsync(chrome.storage.local.get).mockResolvedValue({});
     mockedAsync(chrome.storage.local.set).mockResolvedValue(undefined);
@@ -113,6 +113,34 @@ describe('initializeSettings', () => {
 
     expect(chrome.storage.local.set).toHaveBeenCalledWith(DEFAULT_SETTINGS);
     expect(chrome.storage.sync.clear).not.toHaveBeenCalled();
+  });
+
+  it('uses local Korean bilingual settings for a new install', async () => {
+    mockedAsync(chrome.storage.sync.get).mockResolvedValue({});
+    mockedAsync(chrome.storage.local.get).mockResolvedValue({});
+    mockedAsync(chrome.storage.local.set).mockResolvedValue(undefined);
+
+    await initializeSettings(true);
+
+    expect(chrome.storage.local.set).toHaveBeenCalledWith({
+      ...DEFAULT_SETTINGS,
+      translationProvider: 'chrome-builtin',
+      targetLanguage: 'ko',
+      translationMode: 'append',
+      skipTargetLanguage: true,
+      draftTargetLanguage: 'en',
+      draftProvider: 'chrome-builtin',
+    });
+    expect(chrome.storage.sync.clear).not.toHaveBeenCalled();
+  });
+
+  it('does not fill in or replace existing local settings on a new install', async () => {
+    mockedAsync(chrome.storage.sync.get).mockResolvedValue({});
+    mockedAsync(chrome.storage.local.get).mockResolvedValue({ targetLanguage: 'de', skipTargetLanguage: false });
+
+    await initializeSettings(true);
+
+    expect(chrome.storage.local.set).not.toHaveBeenCalled();
   });
 
   it('reads local storage with the settings keys, never null', async () => {

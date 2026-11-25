@@ -4,11 +4,11 @@ import { serveCompletionRequests } from '@/lib/api/openai-background';
 
 export default defineBackground(() => {
   // Initialize on extension install
-  chrome.runtime.onInstalled.addListener(async () => {
+  chrome.runtime.onInstalled.addListener(async ({ reason }) => {
     console.log('[Background] Extension installed/updated');
 
     // Write defaults on first install, or move settings from sync to local storage
-    await initializeSettings();
+    await initializeSettings(reason === 'install');
 
     // Set up cache cleanup alarm (every hour)
     chrome.alarms.create('cache-cleanup', { periodInMinutes: 60 });

@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, SETTINGS_KEYS } from '@/types/settings';
+import { DEFAULT_SETTINGS, SETTINGS_KEYS, type Settings } from '@/types/settings';
 
 /**
  * Shape written to chrome.storage.sync by versions before presets. Kept as its
@@ -41,8 +41,18 @@ export function convertLegacySettings(legacy: LegacySyncSettings): Record<string
   return converted;
 }
 
+const NEW_INSTALL_SETTINGS: Settings = {
+  ...DEFAULT_SETTINGS,
+  translationProvider: 'chrome-builtin',
+  targetLanguage: 'ko',
+  translationMode: 'append',
+  skipTargetLanguage: true,
+  draftTargetLanguage: 'en',
+  draftProvider: 'chrome-builtin',
+};
+
 /** Called from runtime.onInstalled (install and every update). Idempotent. */
-export async function initializeSettings(): Promise<void> {
+export async function initializeSettings(isNewInstall = false): Promise<void> {
   const synced = await chrome.storage.sync.get(null);
   // Explicit key list: local storage also holds cache_* entries (up to 10 MB).
   const local = await chrome.storage.local.get(SETTINGS_KEYS);
@@ -51,7 +61,8 @@ export async function initializeSettings(): Promise<void> {
   // Detect settings by their keys, not by "local is empty", because cache
   // entries may already live in local storage.
   if (Object.keys(local).length === 0) {
-    await chrome.storage.local.set(hasSynced ? convertLegacySettings(synced) : { ...DEFAULT_SETTINGS });
+    const defaults = isNewInstall ? NEW_INSTALL_SETTINGS : DEFAULT_SETTINGS;
+    await chrome.storage.local.set(hasSynced ? convertLegacySettings(synced) : { ...defaults });
   }
 
   // Runs after the local write so a failed write leaves the sync data for the
