@@ -5,11 +5,9 @@
   "extensionDescription": {
     "message": "Automatically translate Discord messages with Google Translate, DeepL, or OpenAI-compatible APIs"
   },
-
   "common_modeReplace": {
     "message": "Replace Original"
   },
-
   "popup_title": {
     "message": "Discord Translator"
   },
@@ -28,7 +26,6 @@
   "popup_openOptions": {
     "message": "Open settings"
   },
-
   "status_autoTranslateEnabled": {
     "message": "Auto translate enabled"
   },
@@ -62,17 +59,17 @@
   "status_cacheClearFailed": {
     "message": "Failed to clear cache"
   },
-
   "confirm_clearCache": {
     "message": "Are you sure you want to clear all cached translations?"
   },
   "confirm_deletePreset": {
     "message": "Delete preset \"$NAME$\"?",
     "placeholders": {
-      "name": { "content": "$1" }
+      "name": {
+        "content": "$1"
+      }
     }
   },
-
   "options_subtitle": {
     "message": "Configure your translation preferences"
   },
@@ -211,7 +208,9 @@
   "options_extraBodyInvalid": {
     "message": "Invalid JSON, not saved: $ERROR$",
     "placeholders": {
-      "error": { "content": "$1" }
+      "error": {
+        "content": "$1"
+      }
     }
   },
   "options_addPreset": {
@@ -250,7 +249,9 @@
   "options_testOk": {
     "message": "Connected: $RESULT$",
     "placeholders": {
-      "result": { "content": "$1" }
+      "result": {
+        "content": "$1"
+      }
     }
   },
   "options_testPermissionDenied": {
@@ -265,13 +266,17 @@
   "options_cacheTTLDay": {
     "message": "$DAYS$ day",
     "placeholders": {
-      "days": { "content": "$1" }
+      "days": {
+        "content": "$1"
+      }
     }
   },
   "options_cacheTTLDays": {
     "message": "$DAYS$ days",
     "placeholders": {
-      "days": { "content": "$1" }
+      "days": {
+        "content": "$1"
+      }
     }
   },
   "options_cacheUsage": {
@@ -309,5 +314,77 @@
   },
   "options_openaiApiKeyPlaceholder": {
     "message": "Enter your API key"
+  },
+  "basa_surfaces": {
+    "message": "Extra translation targets"
+  },
+  "basa_navigation": {
+    "message": "Channels and categories"
+  },
+  "basa_forum": {
+    "message": "Forum titles and descriptions"
+  },
+  "basa_search": {
+    "message": "Search results"
+  },
+  "basa_draft": {
+    "message": "Outgoing draft translation"
+  },
+  "basa_draftEnabled": {
+    "message": "Enable draft translation button"
+  },
+  "basa_draftTarget": {
+    "message": "Draft target language"
+  },
+  "basa_draftProvider": {
+    "message": "Draft translation provider"
+  },
+  "basa_inherit": {
+    "message": "Same as incoming"
+  },
+  "basa_currentPreset": {
+    "message": "Current incoming preset"
+  },
+  "basa_draftHint": {
+    "message": "Drafts are translated only when you press the button. Non-local providers send the draft to the configured service. Nothing is sent to Discord automatically."
+  },
+  "basa_translateDraft": {
+    "message": "Translate draft"
+  },
+  "basa_restoreDraft": {
+    "message": "Restore original"
+  },
+  "basa_copyDraft": {
+    "message": "Copy translation"
+  },
+  "basa_noDraft": {
+    "message": "Type a message first."
+  },
+  "basa_translating": {
+    "message": "Translating…"
+  },
+  "basa_draftReady": {
+    "message": "Translated. Review before sending."
+  },
+  "basa_draftPreview": {
+    "message": "Draft changed or contains rich content. Copy the translation if you want to use it."
+  },
+  "basa_draftUnchanged": {
+    "message": "No translation returned. Check the language model or provider settings."
+  },
+  "basa_draftError": {
+    "message": "Translation failed. Original draft kept."
+  },
+  "basa_copied": {
+    "message": "Copied"
+  },
+  "basa_restoreBlocked": {
+    "message": "Draft changed. Original was not restored."
+  },
+  "basa_restored": {
+    "message": "Original restored."
+  },
+  "basa_copyFailed": {
+    "message": "Copy failed. Select the preview manually."
   }
 }

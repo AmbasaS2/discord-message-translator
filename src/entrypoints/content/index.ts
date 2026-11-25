@@ -1,10 +1,14 @@
 import { MessageTranslationObserver } from './message-observer';
+import { DraftTranslator } from './draft-translator';
+import './basa-content.css';
 
 export default defineContentScript({
   matches: ['https://discord.com/*', 'https://*.discord.com/*'],
   runAt: 'document_end',
   main() {
     let observer: MessageTranslationObserver | null = null;
+    const draft = new DraftTranslator();
+    draft.start();
 
     // Start monitoring when extension launches
     function initializeObserver() {
@@ -25,6 +29,9 @@ export default defineContentScript({
 
     // Handle settings changes
     chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.draftEnabled) {
+        void draft.configure();
+      }
       if (area === 'local' && changes.autoTranslate) {
         if (changes.autoTranslate.newValue) {
           initializeObserver();

@@ -7,7 +7,7 @@ import { requestCompletionViaBackground } from './openai-background';
 import { ChromeBuiltinTranslator } from './chrome-builtin';
 
 export interface TranslationClient {
-  translate(text: string, targetLang: string): Promise<string>;
+  translate(text: string, targetLang: string, sourceLang?: string): Promise<string>;
   translateBatch(texts: string[], targetLang: string): Promise<string[]>;
 }
 

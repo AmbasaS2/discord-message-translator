@@ -34,6 +34,25 @@
         </select>
       </div>
 
+      <div class="divider my-1" data-i18n="basa_surfaces">Extra translation targets</div>
+      <label class="label"><span data-i18n="basa_navigation">Channels and categories</span><input type="checkbox" id="translateNavigation" class="toggle toggle-sm" /></label>
+      <label class="label"><span data-i18n="basa_forum">Forum titles and descriptions</span><input type="checkbox" id="translateForum" class="toggle toggle-sm" /></label>
+      <label class="label"><span data-i18n="basa_search">Search results</span><input type="checkbox" id="translateSearch" class="toggle toggle-sm" /></label>
+      <div class="divider my-1" data-i18n="basa_draft">Outgoing draft translation</div>
+      <label class="label"><span data-i18n="basa_draftEnabled">Enable draft translation button</span><input type="checkbox" id="draftEnabled" class="toggle toggle-sm" /></label>
+      <label class="label"><span data-i18n="basa_draftTarget">Draft target language</span></label>
+      <select id="draftTargetLanguage" class="select select-sm w-full"></select>
+      <label class="label"><span data-i18n="basa_draftProvider">Draft translation provider</span></label>
+      <select id="draftProvider" class="select select-sm w-full">
+        <option value="chrome-builtin" data-i18n="options_chromeBuiltinFree">Chrome built-in (free)</option>
+        <option value="inherit" data-i18n="basa_inherit">Same as incoming</option>
+        <option value="openai" data-i18n="options_providerOpenai">OpenAI Compatible</option>
+        <option value="google" data-i18n="options_providerGoogle">Google Translate</option>
+        <option value="deepl" data-i18n="options_providerDeepl">DeepL</option>
+      </select>
+      <select id="draftOpenaiPresetId" class="select select-sm w-full" aria-label="Draft OpenAI preset"></select>
+      <p class="text-xs opacity-70" data-i18n="basa_draftHint">Drafts are translated only when you press the button. Non-local providers send the draft to the configured service. Nothing is sent to Discord automatically.</p>
+
       <!-- Open Options -->
       <button id="openOptions" class="btn btn-sm w-full" data-i18n="popup_openOptions">Open settings</button>
     </div>

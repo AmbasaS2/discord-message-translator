@@ -1,0 +1,29 @@
+
+.basa-draft-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 6px;
+  font-size: 12px;
+  color: var(--text-muted, #b9bbbe);
+}
+.basa-draft-tools button {
+  border: 1px solid var(--border-subtle, #555);
+  border-radius: 4px;
+  padding: 3px 7px;
+  background: var(--background-secondary, #292b2f);
+  color: var(--text-normal, #eee);
+  cursor: pointer;
+}
+.basa-draft-tools button:disabled { opacity: .5; cursor: default; }
+.basa-draft-tools [hidden] { display: none !important; }
+.basa-draft-preview {
+  flex-basis: 100%;
+  width: 100%;
+  padding: 5px;
+  color: var(--text-normal, #eee);
+  background: var(--background-secondary, #292b2f);
+  border: 1px solid var(--border-subtle, #555);
+  resize: vertical;
+}

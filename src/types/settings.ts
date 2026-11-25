@@ -22,6 +22,13 @@ export interface Settings {
   targetLanguage: string; // e.g., "ja", "en", "de"
   translationMode: 'replace' | 'append'; // Replace original or append translation
   autoTranslate: boolean; // Auto-translate on/off
+  translateNavigation: boolean;
+  translateForum: boolean;
+  translateSearch: boolean;
+  draftEnabled: boolean;
+  draftTargetLanguage: string;
+  draftProvider: 'inherit' | 'chrome-builtin' | 'google' | 'deepl' | 'openai';
+  draftOpenaiPresetId: string | null;
 
   // Cache settings
   cacheTTLDays: number; // Default: 7
@@ -41,6 +48,13 @@ export const DEFAULT_SETTINGS: Settings = {
   targetLanguage: 'ja',
   translationMode: 'replace',
   autoTranslate: true,
+  translateNavigation: true,
+  translateForum: true,
+  translateSearch: true,
+  draftEnabled: true,
+  draftTargetLanguage: 'en',
+  draftProvider: 'chrome-builtin',
+  draftOpenaiPresetId: null,
   cacheTTLDays: 7,
   showOriginalOnHover: false,
   skipTargetLanguage: false,
