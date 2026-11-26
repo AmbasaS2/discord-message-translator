@@ -469,5 +469,11 @@
   },
   "basa_advancedApi": {
     "message": "고급 API 설정 (선택 사항)"
+  },
+  "basa_supportedAiServices": {
+    "message": "NanoGPT · OpenAI · OpenRouter · 사용자 지정 API"
+  },
+  "basa_noSavedConnections": {
+    "message": "저장된 연결이 없어요. 연결 추가를 눌러 서비스와 모델을 등록하세요."
   }
 }

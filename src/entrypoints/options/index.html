@@ -83,43 +83,6 @@
       </div>
     </div>
 
-    <div class="card bg-base-100 shadow-sm">
-      <div class="card-body space-y-3">
-        <h2 class="card-title text-base" data-i18n="basa_draft">Outgoing draft translation</h2>
-        <label class="label cursor-pointer justify-between gap-3"><span class="text-sm" data-i18n="basa_draftEnabled">Enable draft translation button</span><input type="checkbox" id="draftEnabled" class="toggle toggle-primary toggle-sm" /></label>
-        <label class="basa-option-field" for="draftTargetLanguage"><span class="text-sm" data-i18n="basa_draftTarget">Draft target language</span><select id="draftTargetLanguage" class="select select-sm w-full"></select></label>
-        <label class="basa-option-field" for="draftProvider"><span class="text-sm" data-i18n="basa_draftProvider">Draft provider</span>
-          <select id="draftProvider" class="select select-sm w-full">
-            <option value="chrome-builtin" data-i18n="options_chromeBuiltinFree">Chrome built-in (free)</option>
-          <option value="google" data-i18n="options_providerGoogle">Google Translate</option>
-          <option value="deepl" data-i18n="options_providerDeepl">DeepL</option>
-          <option value="openai" data-i18n="basa_providerAI">AI API (NanoGPT / OpenAI / OpenRouter)</option>
-            <option value="inherit" data-i18n="basa_inherit">Same as incoming</option>
-          </select>
-        </label>
-        <label id="draftConnectionField" class="basa-option-field" hidden for="draftOpenaiPresetId">
-          <span class="text-sm" data-i18n="basa_connectionModel">AI connection / model</span>
-          <select id="draftOpenaiPresetId" class="select select-sm w-full"></select>
-        </label>
-        <p class="text-xs text-base-content/60" data-i18n="basa_draftHint">Drafts are translated only when you press the button. Non-local providers send the draft to the configured service. Nothing is sent to Discord automatically.</p>
-        <details class="basa-connection-details" open>
-          <summary class="text-sm font-medium" data-i18n="basa_draftPrompt">Draft AI translation prompt</summary>
-          <div class="space-y-2 pt-3">
-            <label class="label cursor-pointer justify-between gap-3">
-              <span class="text-sm" data-i18n="basa_draftPromptEnabled">Use detailed translation prompt</span>
-              <input type="checkbox" id="draftPromptEnabled" class="toggle toggle-primary toggle-sm" checked />
-            </label>
-            <p class="text-xs text-base-content/60" data-i18n="basa_draftPromptHint">Edit or restore the built-in style prompt. Turn it off to use only the mandatory translation instructions; the saved prompt is retained. Specialized translation models may not support style prompts.</p>
-            <textarea id="draftTranslationPrompt" class="textarea textarea-sm w-full" rows="9" spellcheck="false" aria-label="Draft AI translation prompt"></textarea>
-            <div class="flex justify-end gap-2">
-              <button type="button" id="resetDraftPrompt" class="btn btn-sm btn-ghost" data-i18n="basa_resetPrompt">Reset to default</button>
-              <button type="button" id="saveDraftPrompt" class="btn btn-sm btn-primary" data-i18n="options_save">Save</button>
-            </div>
-          </div>
-        </details>
-      </div>
-    </div>
-
     <div id="apiConnections" class="card bg-base-100 shadow-sm">
       <div class="card-body space-y-3">
         <h2 class="card-title text-base" data-i18n="basa_connections">API connections</h2>
@@ -174,8 +137,9 @@
             </div>
           </div>
 
+          <p class="text-xs text-base-content/60" data-i18n="basa_supportedAiServices">NanoGPT · OpenAI · OpenRouter · Custom API</p>
           <ul id="openaiPresetList" class="space-y-1"></ul>
-          <p id="openaiPresetEmpty" class="text-xs text-base-content/60" data-i18n="basa_noConnections">No API connections yet. Add a service and model.</p>
+          <p id="openaiPresetEmpty" class="text-xs text-base-content/60" data-i18n="basa_noSavedConnections">No saved connections. Select Add connection to configure a service and model.</p>
 
           <template id="openaiPresetItemTemplate">
             <li class="flex items-center gap-2 rounded-lg bg-base-200 px-3 py-2">
@@ -261,6 +225,43 @@
           </form>
         </div>
 
+      </div>
+    </div>
+
+    <div class="card bg-base-100 shadow-sm">
+      <div class="card-body space-y-3">
+        <h2 class="card-title text-base" data-i18n="basa_draft">Outgoing draft translation</h2>
+        <label class="label cursor-pointer justify-between gap-3"><span class="text-sm" data-i18n="basa_draftEnabled">Enable draft translation button</span><input type="checkbox" id="draftEnabled" class="toggle toggle-primary toggle-sm" /></label>
+        <label class="basa-option-field" for="draftTargetLanguage"><span class="text-sm" data-i18n="basa_draftTarget">Draft target language</span><select id="draftTargetLanguage" class="select select-sm w-full"></select></label>
+        <label class="basa-option-field" for="draftProvider"><span class="text-sm" data-i18n="basa_draftProvider">Draft provider</span>
+          <select id="draftProvider" class="select select-sm w-full">
+            <option value="chrome-builtin" data-i18n="options_chromeBuiltinFree">Chrome built-in (free)</option>
+          <option value="google" data-i18n="options_providerGoogle">Google Translate</option>
+          <option value="deepl" data-i18n="options_providerDeepl">DeepL</option>
+          <option value="openai" data-i18n="basa_providerAI">AI API (NanoGPT / OpenAI / OpenRouter)</option>
+            <option value="inherit" data-i18n="basa_inherit">Same as incoming</option>
+          </select>
+        </label>
+        <label id="draftConnectionField" class="basa-option-field" hidden for="draftOpenaiPresetId">
+          <span class="text-sm" data-i18n="basa_connectionModel">AI connection / model</span>
+          <select id="draftOpenaiPresetId" class="select select-sm w-full"></select>
+        </label>
+        <p class="text-xs text-base-content/60" data-i18n="basa_draftHint">Drafts are translated only when you press the button. Non-local providers send the draft to the configured service. Nothing is sent to Discord automatically.</p>
+        <details class="basa-connection-details" open>
+          <summary class="text-sm font-medium" data-i18n="basa_draftPrompt">Draft AI translation prompt</summary>
+          <div class="space-y-2 pt-3">
+            <label class="label cursor-pointer justify-between gap-3">
+              <span class="text-sm" data-i18n="basa_draftPromptEnabled">Use detailed translation prompt</span>
+              <input type="checkbox" id="draftPromptEnabled" class="toggle toggle-primary toggle-sm" checked />
+            </label>
+            <p class="text-xs text-base-content/60" data-i18n="basa_draftPromptHint">Edit or restore the built-in style prompt. Turn it off to use only the mandatory translation instructions; the saved prompt is retained. Specialized translation models may not support style prompts.</p>
+            <textarea id="draftTranslationPrompt" class="textarea textarea-sm w-full" rows="9" spellcheck="false" aria-label="Draft AI translation prompt"></textarea>
+            <div class="flex justify-end gap-2">
+              <button type="button" id="resetDraftPrompt" class="btn btn-sm btn-ghost" data-i18n="basa_resetPrompt">Reset to default</button>
+              <button type="button" id="saveDraftPrompt" class="btn btn-sm btn-primary" data-i18n="options_save">Save</button>
+            </div>
+          </div>
+        </details>
       </div>
     </div>
 

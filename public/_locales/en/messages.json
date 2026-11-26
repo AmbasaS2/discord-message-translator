@@ -469,5 +469,11 @@
   },
   "basa_advancedApi": {
     "message": "Advanced API options (optional)"
+  },
+  "basa_supportedAiServices": {
+    "message": "NanoGPT · OpenAI · OpenRouter · Custom API"
+  },
+  "basa_noSavedConnections": {
+    "message": "No saved connections. Select Add connection to configure a service and model."
   }
 }

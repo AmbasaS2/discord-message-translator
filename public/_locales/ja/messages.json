@@ -400,5 +400,11 @@
   },
   "basa_advancedApi": {
     "message": "高度な API 設定（任意）"
+  },
+  "basa_supportedAiServices": {
+    "message": "NanoGPT · OpenAI · OpenRouter · カスタム API"
+  },
+  "basa_noSavedConnections": {
+    "message": "保存された接続がありません。接続を追加してサービスとモデルを登録してください。"
   }
 }
