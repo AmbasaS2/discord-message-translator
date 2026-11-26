@@ -1,6 +1,6 @@
 import { buildInlineFromTranslation, type Placeholder, type StructuredBlock } from './structure-preserving';
 
-export type InterleavedGranularity = 'paragraph' | 'sentence';
+export type BilingualGranularity = 'paragraph' | 'sentence' | 'message' | 'replace';
 
 type Anchor = { node: Text; offset: number } | { node: HTMLElement; offset?: undefined };
 type Piece = {
@@ -11,8 +11,11 @@ type Piece = {
   placeholder?: Placeholder;
 };
 
+interface SourcePart { node: Text | HTMLElement; from: number; to: number }
+
 export interface BilingualUnit {
   block: StructuredBlock;
+  parts: SourcePart[];
   anchor: Anchor;
   send: boolean;
   paragraph: number;
@@ -22,7 +25,7 @@ export interface BilingualUnit {
 export interface BilingualLayout {
   source: string;
   fingerprint: string;
-  granularity: InterleavedGranularity;
+  granularity: BilingualGranularity;
   units: BilingualUnit[];
 }
 
@@ -79,7 +82,7 @@ function sentenceRanges(text: string, start: number, end: number): Array<[number
  * insertion boundary of each unit. Protected inline objects stay atomic.
  * Paragraphs use block elements and blank lines, not visual line wrapping.
  */
-export function collectBilingualLayout(root: HTMLElement, granularity: InterleavedGranularity): BilingualLayout | null {
+export function collectBilingualLayout(root: HTMLElement, granularity: BilingualGranularity): BilingualLayout | null {
   const source = root.textContent ?? '';
   const units: BilingualUnit[] = [];
   let pieces: Piece[] = [];
@@ -121,9 +124,15 @@ export function collectBilingualLayout(root: HTMLElement, granularity: Interleav
         while (cursor < pieces.length && pieces[cursor]!.end <= from) cursor++;
         let endPiece: Piece | undefined;
         const placeholders: Placeholder[] = [];
+        const parts: SourcePart[] = [];
         for (let i = cursor; i < pieces.length && pieces[i]!.start < to; i++) {
           const piece = pieces[i]!;
           endPiece = piece;
+          parts.push({
+            node: piece.node,
+            from: Math.max(from, piece.start) - piece.start,
+            to: Math.min(to, piece.end) - piece.start,
+          });
           if (piece.placeholder) placeholders.push(piece.placeholder);
         }
         if (!endPiece) continue;
@@ -136,7 +145,7 @@ export function collectBilingualLayout(root: HTMLElement, granularity: Interleav
           : { node: endPiece.node as HTMLElement };
         units.push({
           block: { tagName: 'p', text: value, placeholders },
-          anchor, send, paragraph, gapBefore: text.slice(previousEnd, from),
+          parts, anchor, send, paragraph, gapBefore: text.slice(previousEnd, from),
         });
         previousEnd = to;
         if (units.length > MAX_UNITS) { overflow = true; break; }
@@ -181,10 +190,47 @@ export function bilingualUnitId(messageId: string, text: string, ordinal = 0, fi
   return `${messageId}-basa-pair-v2-${fingerprint}-${ordinal}-${text.length}-${hashText(text)}`;
 }
 
-function insertAfterAnchor(root: HTMLElement, anchor: Anchor, translation: HTMLElement): void {
+interface OwnedSplit { original: Text; suffix: Text; prefix: string; suffixText: string }
+const ownedSplits = new WeakMap<HTMLElement, OwnedSplit[]>();
+
+/** Read only Discord's source, without collecting any previously inserted translation. */
+export function readOriginalSource(root: HTMLElement): string {
+  if (!root.querySelector('.discord-translator-translation')) return root.textContent ?? '';
+  const visit = (node: Node): string => {
+    if (node instanceof Element && node.matches('.discord-translator-translation')) return '';
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+    let value = '';
+    for (const child of node.childNodes) value += visit(child);
+    return value;
+  };
+  return visit(root);
+}
+
+/** Undo only our own display nodes and text splits. Never restore stale source text. */
+export function clearTranslationView(root: HTMLElement): void {
+  root.querySelectorAll('.discord-translator-translation').forEach(node => node.remove());
+  for (const split of (ownedSplits.get(root) ?? []).slice().reverse()) {
+    const { original, suffix, prefix, suffixText } = split;
+    if (!root.contains(suffix)) continue;
+    if (root.contains(original) && original.parentNode === suffix.parentNode && original.data === prefix) {
+      original.data += suffix.data;
+      suffix.remove();
+    } else if (suffix.data === suffixText) {
+      // React may have replaced the original text with the entire edited message.
+      suffix.remove();
+    }
+  }
+  ownedSplits.delete(root);
+  for (const child of Array.from(root.children)) {
+    if (child.classList.contains('discord-translator-original')) child.replaceWith(...child.childNodes);
+  }
+}
+
+function insertAfterAnchor(root: HTMLElement, anchor: Anchor, translation: HTMLElement, splits: OwnedSplit[]): void {
   let node: Node = anchor.node;
   if (anchor.offset !== undefined && anchor.offset < anchor.node.length) {
     const following = anchor.node.splitText(anchor.offset);
+    splits.push({ original: anchor.node, suffix: following, prefix: anchor.node.data, suffixText: following.data });
     following.parentNode!.insertBefore(translation, following);
     return;
   }
@@ -196,10 +242,77 @@ function insertAfterAnchor(root: HTMLElement, anchor: Anchor, translation: HTMLE
   node.parentNode!.insertBefore(translation, node.nextSibling);
 }
 
+/**
+ * Compose the complete translated view from the same aligned units as the
+ * interleaved view. Clone only once, on initial render, and leave live source
+ * nodes alone in append mode. Untranslated spans and code remain intact.
+ */
+function renderWholeLayout(root: HTMLElement, layout: BilingualLayout, translations: Array<string | undefined>): boolean {
+  type Edit = { from: number; to: number; insertion?: DocumentFragment };
+  const edits = new Map<Node, Edit[]>();
+  for (let i = 0; i < layout.units.length; i++) {
+    const unit = layout.units[i]!;
+    const value = translations[i];
+    if (!unit.send || !value || value === unit.block.text) continue;
+    if (unit.parts.some(part => !root.contains(part.node) ||
+        (part.node instanceof Text && part.to > part.node.length))) return false;
+    unit.parts.forEach((part, partIndex) => {
+      const list = edits.get(part.node) ?? [];
+      list.push({
+        from: part.from, to: part.to,
+        ...(partIndex === 0 ? { insertion: buildInlineFromTranslation(value, unit.block.placeholders) } : {}),
+      });
+      edits.set(part.node, list);
+    });
+  }
+  if (!edits.size) return false;
+  const container = document.createElement('div');
+  container.className = 'discord-translator-translation';
+  container.style.cssText = layout.granularity === 'replace'
+    ? 'font-size: 0.95em;' : 'font-size: 0.95em; margin-top: 4px;';
+
+  function copy(node: Node, target: Node): void {
+    const changes = edits.get(node);
+    if (node instanceof Text && changes) {
+      let cursor = 0;
+      for (const edit of changes) {
+        if (edit.from > cursor) target.appendChild(document.createTextNode(node.data.slice(cursor, edit.from)));
+        if (edit.insertion) target.appendChild(edit.insertion);
+        cursor = edit.to;
+      }
+      if (cursor < node.length) target.appendChild(document.createTextNode(node.data.slice(cursor)));
+      return;
+    }
+    if (changes) {
+      for (const edit of changes) if (edit.insertion) target.appendChild(edit.insertion);
+      return;
+    }
+    const clone = node.cloneNode(false);
+    if (clone instanceof Element) clone.removeAttribute('id');
+    target.appendChild(clone);
+    for (const child of node.childNodes) copy(child, clone);
+  }
+  for (const child of root.childNodes) copy(child, container);
+  // Placeholders are cloned too. Do not introduce duplicate document IDs.
+  container.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'));
+  if (layout.granularity === 'replace') {
+    const original = document.createElement('span');
+    original.className = 'discord-translator-original';
+    original.style.display = 'none';
+    original.append(...root.childNodes);
+    root.appendChild(original);
+  }
+  root.appendChild(container);
+  return true;
+}
+
 /** Insert only translated units; original links, mentions and text remain in the live DOM. */
 export function renderBilingualLayout(root: HTMLElement, layout: BilingualLayout, translations: Array<string | undefined>): boolean {
   if (!root.isConnected || root.querySelector('.discord-translator-translation') ||
       root.textContent !== layout.source || translations.length !== layout.units.length) return false;
+  if (layout.granularity === 'message' || layout.granularity === 'replace') {
+    return renderWholeLayout(root, layout, translations);
+  }
 
   const inserts: Array<{ anchor: Anchor; node: HTMLElement }> = [];
   let start = 0;
@@ -233,9 +346,11 @@ export function renderBilingualLayout(root: HTMLElement, layout: BilingualLayout
     start = end;
   }
   // Later text offsets must be used first so splitText cannot invalidate them.
+  const splits: OwnedSplit[] = [];
   for (let i = inserts.length - 1; i >= 0; i--) {
     const item = inserts[i]!;
-    insertAfterAnchor(root, item.anchor, item.node);
+    insertAfterAnchor(root, item.anchor, item.node, splits);
   }
+  if (splits.length) ownedSplits.set(root, splits);
   return inserts.length > 0;
 }

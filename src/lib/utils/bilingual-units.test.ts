@@ -1,6 +1,6 @@
 
 import { describe, it, expect, afterEach } from 'vitest';
-import { collectBilingualLayout, renderBilingualLayout, bilingualUnitId } from './bilingual-units';
+import { collectBilingualLayout, renderBilingualLayout, bilingualUnitId, clearTranslationView, readOriginalSource } from './bilingual-units';
 
 function mount(html: string): HTMLElement {
   const root = document.createElement('div');
@@ -23,6 +23,45 @@ describe('interleaved bilingual layout', () => {
     expect(renderBilingualLayout(root, paragraph, ['첫 문장.', '둘째 문장.', '셋째 문장.'])).toBe(true);
     expect(Array.from(root.querySelectorAll('.basa-bilingual-unit'), el => el.textContent))
       .toEqual(['첫 문장. 둘째 문장.', '셋째 문장.']);
+  });
+
+  it.each(['message', 'replace'] as const)('uses the same units for %s without changing source nodes', mode => {
+    const root = mount('<p>First. Second <a href="https://example.com">link</a>.</p><ul><li>Third.</li></ul><pre><code>literal()</code></pre>');
+    const link = root.querySelector('a')!;
+    const plan = collectBilingualLayout(root, mode)!;
+    const sentence = collectBilingualLayout(root, 'sentence')!;
+    expect(plan.units).toEqual(sentence.units);
+    expect(plan.fingerprint).toBe(sentence.fingerprint);
+    expect(renderBilingualLayout(root, plan, ['첫째.', '둘째 §P0§.', '셋째.'])).toBe(true);
+    const view = root.querySelector('.discord-translator-translation')!;
+    expect(view.querySelector('p')?.textContent).toBe('첫째. 둘째 link.');
+    expect(view.querySelector('a')?.getAttribute('href')).toBe('https://example.com');
+    expect(view.querySelector('ul > li')?.textContent).toBe('셋째.');
+    expect(view.querySelector('pre > code')?.textContent).toBe('literal()');
+    expect(readOriginalSource(root)).toBe(plan.source);
+    clearTranslationView(root);
+    expect(root.querySelector('a')).toBe(link);
+    expect(root.textContent).toBe(plan.source);
+  });
+
+  it('removes stale generated suffixes instead of overwriting an edited source node', () => {
+    const root = mount('One. Two. Three.');
+    const original = root.firstChild as Text;
+    expect(renderBilingualLayout(root, collectBilingualLayout(root, 'sentence')!, ['하나.', '둘.', '셋.'])).toBe(true);
+    original.data = 'Edited message.';
+    clearTranslationView(root);
+    expect(root.textContent).toBe('Edited message.');
+    expect(root.firstChild).toBe(original);
+  });
+
+  it('restores the original text nodes after removing an unchanged interleaved view', () => {
+    const root = mount('One. Two. Three.');
+    const original = root.firstChild as Text;
+    renderBilingualLayout(root, collectBilingualLayout(root, 'sentence')!, ['하나.', '둘.', '셋.']);
+    clearTranslationView(root);
+    expect(root.childNodes).toHaveLength(1);
+    expect(root.firstChild).toBe(original);
+    expect(original.data).toBe('One. Two. Three.');
   });
 
   it('protects abbreviated names and versions from artificial sentence splitting', () => {

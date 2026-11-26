@@ -210,16 +210,43 @@ describe('interleaved bilingual modes', () => {
     expect(translateMessage).not.toHaveBeenCalled();
   });
 
+  it('uses the same request IDs in all four display modes', async () => {
+    let ids: string[] | undefined;
+    vi.mocked(translateMessageBatch).mockImplementation(async items => {
+      const current = items.map(({ id }) => id);
+      if (ids) expect(current).toEqual(ids);
+      else ids = current;
+      return new Map(items.map(({ id, content }) => [id, content === 'First.' ? '첫째.' : '둘째.']));
+    });
+    for (const mode of ['message', 'paragraph', 'sentence', 'replace'] as const) {
+      vi.mocked(getSettings).mockResolvedValue({
+        ...DEFAULT_SETTINGS,
+        translationMode: mode === 'replace' ? 'replace' : 'append',
+        bilingualGranularity: mode === 'replace' ? 'message' : mode,
+      });
+      const node = message(900, 'First. Second.');
+      document.body.append(node);
+      observer.start();
+      await show(node);
+      expect(node.querySelector(translated)).not.toBeNull();
+      observer.stop();
+      node.remove();
+      observer = new MessageTranslationObserver();
+    }
+    expect(translateMessageBatch).toHaveBeenCalledTimes(4);
+  });
+
   it('does not alter original replacement mode', async () => {
     vi.mocked(getSettings).mockResolvedValue({ ...DEFAULT_SETTINGS, translationMode: 'replace', bilingualGranularity: 'sentence' });
-    vi.mocked(translateMessage).mockResolvedValue('번역.');
+    vi.mocked(translateMessageBatch).mockImplementation(async items =>
+      new Map(items.map(({ id, content }) => [id, content === 'First.' ? '첫째.' : '둘째.'])));
     const node = message(200, 'First. Second.');
     document.body.append(node);
     observer.start();
     await show(node);
     expect(node.querySelector('.basa-bilingual-unit')).toBeNull();
     expect(node.querySelector<HTMLElement>('.discord-translator-original')?.style.display).toBe('none');
-    expect(node.querySelector(translated)?.textContent).toBe('번역.');
+    expect(node.querySelector(translated)?.textContent).toBe('첫째. 둘째.');
   });
 });
 

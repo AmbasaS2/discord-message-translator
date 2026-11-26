@@ -433,7 +433,7 @@ export class MessageTranslationObserver {
           this.translatedElements.add(plan.element);
           translatedParents.add(plan.parent);
         } else {
-          const translatedBlocks = plan.entries.map((entry) => resolveBlock(entry, translations, plan.embed || Boolean(plan.bilingual)));
+          const translatedBlocks = plan.entries.map((entry) => resolveBlock(entry, translations, true));
           if (!translatedBlocks.some(({ block, translation }) => translation !== block.text)) {
             if (settings.translationProvider === 'openai') {
               this.translatedElements.add(plan.element);
@@ -500,31 +500,38 @@ export class MessageTranslationObserver {
 
     const embed = item.type === 'embed-section';
     const canStructure = !isReplyContext && (!embed || item.element.matches('div, section, article'));
-    if (canStructure && settings.translationMode === 'append' &&
-        (settings.bilingualGranularity === 'paragraph' || settings.bilingualGranularity === 'sentence')) {
+    if (canStructure) {
       if (item.element.querySelector('.discord-translator-translation')) return null;
-      const bilingual = collectBilingualLayout(item.element, settings.bilingualGranularity);
+      const granularity = settings.translationMode === 'replace' ? 'replace' : settings.bilingualGranularity;
+      const bilingual = collectBilingualLayout(item.element, granularity);
       if (bilingual) {
         if (!bilingual.units.some(({ send }) => send)) return null;
+        const onePlain = bilingual.units.length === 1 &&
+          bilingual.units[0]!.block.text === fallbackText &&
+          !bilingual.units[0]!.block.placeholders.length;
+        // Single unformatted sentences keep the cheap existing path in the
+        // full-message modes, sharing the same cache key as the paired modes.
+        if (onePlain && (granularity === 'message' || granularity === 'replace') &&
+            !item.element.querySelector('h1,h2,h3,h4,h5,h6,p,ul,ol,pre,blockquote,br')) {
+          return { kind: 'simple', contentId: item.id, content: fallbackText, element: item.element, parent, type: item.type };
+        }
         const entries = bilingual.units.map(({ block, send }, index) => ({
           block,
-          id: bilingual.units.length === 1 && block.text === fallbackText && !block.placeholders.length
-            ? item.id : bilingualUnitId(item.id, block.text, index, bilingual.fingerprint),
+          id: onePlain ? item.id : bilingualUnitId(item.id, block.text, index, bilingual.fingerprint),
           send,
         }));
         return { kind: 'structured', element: item.element, parent, entries, embed, bilingual, groupId: getTranslatableElementKey(item) };
       }
-    }
-    if (canStructure) {
-      const blocks = extractBlocks(item.element, embed);
+      // Very fragmented messages use the same bounded block fallback in every mode.
+      const blocks = extractBlocks(item.element, true);
       const hasStructure =
-        blocks.length > 1 || blocks.some((b) => b.tagName !== 'p' || (embed && b.placeholders.length > 0));
+        blocks.length > 1 || blocks.some((b) => b.tagName !== 'p' || b.placeholders.length > 0);
       if (hasStructure && blocks.length > 0) {
         const revision = embed ? 'embed-structure-v1' : 'basa-structure-v1';
         const entries = blocks.map((block, i) => ({
           block,
           id: `${item.id}-${revision}-b${i}`,
-          send: !embed || /\p{L}/u.test(block.text.replace(/§[MCP]\d+§/g, '')),
+          send: /\p{L}/u.test(block.text.replace(/§[MCP]\d+§/g, '')),
         }));
         if (!entries.some(({ send }) => send)) return null;
         return {
@@ -624,7 +631,7 @@ export class MessageTranslationObserver {
             plan.entries.filter(({ send }) => send).map(({ id, block }) => ({ id, content: block.text, groupId: plan.groupId })),
             settings.targetLanguage
           );
-          const translatedBlocks = plan.entries.map((entry) => resolveBlock(entry, blockTranslations, plan.embed || Boolean(plan.bilingual)));
+          const translatedBlocks = plan.entries.map((entry) => resolveBlock(entry, blockTranslations, true));
           if (!translatedBlocks.some(({ block, translation }) => translation !== block.text)) {
             if (plan.embed) incompleteEmbed = true;
             continue;
@@ -679,7 +686,7 @@ export class MessageTranslationObserver {
     }
 
     const translationContainer = assembleTranslation(translatedBlocks);
-    if (embed && mode === 'append') {
+    if (mode === 'append') {
       contentElement.appendChild(translationContainer);
       return;
     }
@@ -720,8 +727,8 @@ export class MessageTranslationObserver {
     const isReplyContext = contentElement.closest('[id^="message-reply-context-"]') !== null;
 
     // Create a wrapper for original content if it doesn't exist
-    let originalWrapper = contentElement.querySelector('.discord-translator-original') as HTMLElement;
-    if (!originalWrapper) {
+    let originalWrapper = contentElement.querySelector('.discord-translator-original') as HTMLElement | null;
+    if (!originalWrapper && mode === 'replace') {
       // Wrap all existing children in a span for easier manipulation
       originalWrapper = document.createElement('span');
       originalWrapper.className = 'discord-translator-original';
@@ -738,21 +745,14 @@ export class MessageTranslationObserver {
     translationSpan.style.cssText = 'font-size: 0.95em;';
     translationSpan.textContent = translation;
 
-    if (mode === 'replace') {
-      // Replace mode - hide original content and show translation
+    if (mode === 'replace' && originalWrapper) {
       originalWrapper.style.display = 'none';
-      contentElement.appendChild(translationSpan);
+    } else if (isReplyContext) {
+      translationSpan.style.marginInlineStart = '0.35em';
     } else {
-      // Append mode - show both original and translation
-      if (isReplyContext) {
-        // Reply context: inline without line break (space separated)
-        contentElement.append(document.createTextNode(' '), translationSpan);
-      } else {
-        // Normal message: add line break between original and translation
-        const br = document.createElement('br');
-        contentElement.append(br, translationSpan);
-      }
+      translationSpan.style.display = 'block';
     }
+    contentElement.appendChild(translationSpan);
   }
 
   /**
