@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { translateMessage } from './translator';
+import { translateMessage, translateMessageBatch } from './translator';
 
 // Mock dependencies
 vi.mock('@/lib/cache/factory', () => ({
@@ -71,6 +71,38 @@ describe('Translator Utilities', () => {
       return { translate: mockTranslate } as any;
     });
     chromeBuiltinMocks.translate.mockReset();
+  });
+
+  it('bulk reads and saves successful grouped units without caching a missing AI result', async () => {
+    const existing = { translations: { ko: '첫째' }, timestamp: Date.now() };
+    mockStorage.getMany = vi.fn().mockResolvedValueOnce(new Map([['a', existing]])).mockResolvedValueOnce(new Map());
+    mockStorage.setMany = vi.fn().mockResolvedValue(undefined);
+    const batch = vi.fn().mockResolvedValue(['둘째', '']);
+    vi.mocked(OpenAICompatibleClient).mockImplementation(function () {
+      return { translateBatch: batch } as any;
+    });
+    vi.mocked(getSettings).mockResolvedValue({
+      translationProvider: 'openai',
+      apiKeys: {},
+      openaiPresets: [{ id: 'p1', name: 'test', baseUrl: 'https://api.example.com/v1', model: 'm', apiKey: 'key' }],
+      activeOpenaiPresetId: 'p1',
+    } as any);
+
+    const result = await translateMessageBatch([
+      { id: 'a', content: 'First.', groupId: 'm1' },
+      { id: 'b', content: 'Second.', groupId: 'm1' },
+      { id: 'c', content: 'Third.', groupId: 'm1' },
+    ], 'ko');
+
+    expect(result).toEqual(new Map([['a', '첫째'], ['b', '둘째']]));
+    expect(batch).toHaveBeenCalledWith(['Second.', 'Third.'], 'ko', undefined, ['m1', 'm1']);
+    expect(mockStorage.getMany).toHaveBeenCalledTimes(2);
+    expect(mockStorage.getMany).toHaveBeenLastCalledWith(['b']);
+    expect(mockStorage.get).not.toHaveBeenCalled();
+    expect(mockStorage.setMany).toHaveBeenCalledTimes(1);
+    const saved = mockStorage.setMany.mock.calls[0][0] as Map<string, any>;
+    expect([...saved.keys()]).toEqual(['b']);
+    expect(saved.get('b').translations.ko).toBe('둘째');
   });
 
   describe('translateMessage', () => {

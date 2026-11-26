@@ -37,6 +37,34 @@ export class ChromeStorageCache implements ITranslationStorage {
     await chrome.storage.local.set({ [`${CACHE_PREFIX}${messageId}`]: entry });
   }
 
+  async getMany(messageIds: readonly string[]): Promise<Map<string, TranslationCacheEntry>> {
+    const entries = new Map<string, TranslationCacheEntry>();
+    const ids = [...new Set(messageIds)];
+    if (!ids.length) return entries;
+    const keys = ids.map(id => CACHE_PREFIX + id);
+    const stored = await chrome.storage.local.get([...keys, 'cacheTTLDays']);
+    const ttlMs = (Number(stored.cacheTTLDays) || 7) * 24 * 60 * 60 * 1000;
+    const cutoff = Date.now() - ttlMs;
+    const expired: string[] = [];
+    for (const id of ids) {
+      const key = CACHE_PREFIX + id;
+      const entry = stored[key] as TranslationCacheEntry | undefined;
+      if (!entry) continue;
+      if (entry.timestamp < cutoff) expired.push(key);
+      else entries.set(id, entry);
+    }
+    if (expired.length) await chrome.storage.local.remove(expired);
+    return entries;
+  }
+
+  async setMany(entries: ReadonlyMap<string, TranslationCacheEntry>): Promise<void> {
+    if (!entries.size) return;
+    await this.ensureStorageSpace();
+    await chrome.storage.local.set(Object.fromEntries(
+      Array.from(entries, ([id, entry]) => [CACHE_PREFIX + id, entry]),
+    ));
+  }
+
   async delete(messageId: string): Promise<void> {
     await chrome.storage.local.remove([`${CACHE_PREFIX}${messageId}`]);
   }

@@ -19,6 +19,8 @@ export interface CacheStats {
 export interface ITranslationStorage {
   get(messageId: string): Promise<TranslationCacheEntry | null>;
   set(messageId: string, entry: TranslationCacheEntry): Promise<void>;
+  getMany?(messageIds: readonly string[]): Promise<Map<string, TranslationCacheEntry>>;
+  setMany?(entries: ReadonlyMap<string, TranslationCacheEntry>): Promise<void>;
   delete(messageId: string): Promise<void>;
   clear(): Promise<void>;
   cleanupExpired(): Promise<void>;

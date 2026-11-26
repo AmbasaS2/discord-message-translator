@@ -89,33 +89,63 @@ export function parseExtraBody(text: string | undefined): ExtraBodyResult {
 }
 
 /**
- * Extract `{id, text}` items from a batch response. Never throws: anything
- * unusable is simply absent from the map so the caller can retry it.
+ * Salvage complete top-level objects from a truncated JSON array.
+ * Stop at the first damaged boundary; never infer a missing ID or text.
+ */
+function recoverIndexedPrefix(source: string, start: number, count: number): unknown[] {
+  const items: unknown[] = [];
+  let cursor = start + 1;
+  while (cursor < source.length && items.length < count) {
+    while (cursor < source.length && /\s/.test(source[cursor]!)) cursor++;
+    if (source[cursor] !== '{') break;
+    const begin = cursor;
+    let depth = 0;
+    let quoted = false;
+    let escaped = false;
+    let complete = false;
+    for (; cursor < source.length; cursor++) {
+      const char = source[cursor]!;
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') quoted = false;
+        continue;
+      }
+      if (char === '"') quoted = true;
+      else if (char === '{' || char === '[') depth++;
+      else if (char === '}' || char === ']') {
+        depth--;
+        if (depth === 0) { cursor++; complete = true; break; }
+      }
+    }
+    if (!complete) break;
+    try {
+      items.push(JSON.parse(source.slice(begin, cursor)));
+    } catch { break; }
+    while (cursor < source.length && /\s/.test(source[cursor]!)) cursor++;
+    if (source[cursor] !== ',') break;
+    cursor++;
+  }
+  return items;
+}
+
+/**
+ * Extract indexed translations without guessing alignment. Complete entries
+ * from a truncated response can be retained without another paid request.
  */
 export function parseIndexedTranslations(content: string, count: number): Map<number, string> {
   const result = new Map<number, string>();
-
-  // Some endpoints inline reasoning in content; its brackets would confuse the
-  // bracket search below. Code fences need no stripping: slicing from the first
-  // "[" to the last "]" drops them without touching fences inside the texts.
   const cleaned = content.replace(/^\s*<think>[\s\S]*?<\/think>/, '');
-
   const start = cleaned.indexOf('[');
+  if (start === -1) return result;
   const end = cleaned.lastIndexOf(']');
-  if (start === -1 || end <= start) {
-    return result;
-  }
-
   let items: unknown;
   try {
-    items = JSON.parse(cleaned.slice(start, end + 1));
+    items = end > start ? JSON.parse(cleaned.slice(start, end + 1)) : recoverIndexedPrefix(cleaned, start, count);
   } catch {
-    return result;
+    items = recoverIndexedPrefix(cleaned, start, count);
   }
-  if (!Array.isArray(items)) {
-    return result;
-  }
-
+  if (!Array.isArray(items)) return result;
   for (const item of items) {
     if (typeof item !== 'object' || item === null) continue;
     const { id, text } = item as { id?: unknown; text?: unknown };
@@ -124,7 +154,6 @@ export function parseIndexedTranslations(content: string, count: number): Map<nu
     const trimmed = text.trim();
     if (trimmed) result.set(id, trimmed);
   }
-
   return result;
 }
 

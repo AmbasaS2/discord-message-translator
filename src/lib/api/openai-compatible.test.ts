@@ -423,6 +423,12 @@ describe('OpenAICompatibleClient', () => {
       expect(fetch).toHaveBeenCalledTimes(1);
     });
 
+    it('retains complete objects in a truncated response without retrying', async () => {
+      mockContents('[{"id":0,"text":"Bonjour"},{"id":1,"text":"Au');
+      expect(await client.translateBatch(['Hello', 'Goodbye'], 'fr')).toEqual(['Bonjour', '']);
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
     it('does not fan out another request when alignment is unparseable', async () => {
       mockContents('Only one translation');
       expect(await client.translateBatch(['Hello', 'Goodbye'], 'fr')).toEqual(['', '']);

@@ -1,5 +1,6 @@
 import { planBatchRanges } from '@/lib/api/batch-plan';
 import { createStorage } from '@/lib/cache/factory';
+import type { ITranslationStorage } from '@/lib/cache/types';
 import { createTranslationClient } from '@/lib/api/factory';
 import type { TranslationCacheEntry } from '@/types/cache';
 import { getSettings } from './settings';
@@ -47,9 +48,18 @@ export async function translateMessage(
   return translation;
 }
 
+async function readCachedEntries(storage: ITranslationStorage, ids: string[]): Promise<Map<string, TranslationCacheEntry>> {
+  if (storage.getMany) return storage.getMany(ids);
+  const entries = new Map<string, TranslationCacheEntry>();
+  for (const id of ids) {
+    const entry = await storage.get(id);
+    if (entry) entries.set(id, entry);
+  }
+  return entries;
+}
+
 /**
- * Translate multiple messages in a single batch request
- * More efficient than translating individually
+ * Translate visible units together, reading and writing their cache entries in bulk.
  */
 export async function translateMessageBatch(
   messages: Array<{ id: string; content: string; groupId?: string }>,
@@ -59,17 +69,14 @@ export async function translateMessageBatch(
   const settings = await getSettings();
   const results = new Map<string, string>();
 
-  // Separate cached and uncached messages
+  const cachedEntries = await readCachedEntries(storage, messages.map(message => message.id));
   const uncachedMessages: typeof messages = [];
   const uncachedTexts: string[] = [];
 
   for (const message of messages) {
-    const cached = await storage.get(message.id);
-    const hit = cached?.translations[targetLang];
-    if (hit) {
-      results.set(message.id, hit);
-      console.log(`[Translator] Cache hit for message ${message.id}`);
-    } else {
+    const hit = cachedEntries.get(message.id)?.translations[targetLang];
+    if (hit) results.set(message.id, hit);
+    else {
       uncachedMessages.push(message);
       uncachedTexts.push(message.content);
     }
@@ -112,31 +119,31 @@ export async function translateMessageBatch(
     throw new Error('[Translator] translateBatch returned a mismatched number of results');
   }
 
-  // Save translations to cache and results
+  const cacheable = new Map<string, string>();
   for (let i = 0; i < uncachedMessages.length; i++) {
     const message = uncachedMessages[i];
     const translation = translations[i];
     if (message === undefined || !translation?.trim()) continue;
-
     results.set(message.id, translation);
-
-    // See the comment in translateMessage: skip caching a chrome-builtin no-op.
-    if (settings.translationProvider === 'chrome-builtin' && translation === message.content) {
-      continue;
-    }
-
-    // Update cache
-    const cached = await storage.get(message.id);
-    const entry: TranslationCacheEntry = {
-      translations: {
-        ...(cached?.translations || {}),
-        [targetLang]: translation,
-      },
-      timestamp: Date.now(),
-    };
-    await storage.set(message.id, entry);
+    if (settings.translationProvider === 'chrome-builtin' && translation === message.content) continue;
+    cacheable.set(message.id, translation);
   }
 
-  console.log(`[Translator] Batch translated and cached ${uncachedMessages.length} messages`);
+  if (cacheable.size) {
+    // Read fresh entries before merging: another completed request may have
+    // saved a different target language during the API call.
+    const latest = await readCachedEntries(storage, [...cacheable.keys()]);
+    const entries = new Map<string, TranslationCacheEntry>();
+    const timestamp = Date.now();
+    for (const [id, translation] of cacheable) {
+      entries.set(id, {
+        translations: { ...latest.get(id)?.translations, [targetLang]: translation },
+        timestamp,
+      });
+    }
+    if (storage.setMany) await storage.setMany(entries);
+    else for (const [id, entry] of entries) await storage.set(id, entry);
+  }
+  console.log(`[Translator] Batch cache: ${results.size} usable, ${cacheable.size} saved`);
   return results;
 }

@@ -286,3 +286,29 @@ describe('ChromeStorageCache', () => {
     });
   });
 });
+
+describe('Bulk translation cache', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('reads requested units and TTL once and removes expired entries together', async () => {
+    const now = Date.now();
+    const fresh = { translations: { ko: '새 번역' }, timestamp: now };
+    const expired = { translations: { ko: '이전 번역' }, timestamp: now - 2 * 86400000 };
+    mockLocalStorage({ cache_a: fresh, cache_b: expired, cache_c: expired, cacheTTLDays: 1 });
+    mockedAsync(chrome.storage.local.remove).mockResolvedValue(undefined);
+    const cache = new ChromeStorageCache();
+    expect(await cache.getMany(['a', 'b', 'c', 'missing', 'a'])).toEqual(new Map([['a', fresh]]));
+    expect(chrome.storage.local.get).toHaveBeenCalledTimes(1);
+    expect(chrome.storage.local.remove).toHaveBeenCalledWith(['cache_b', 'cache_c']);
+  });
+
+  it('writes multiple units after one capacity check', async () => {
+    mockedAsync(chrome.storage.local.getBytesInUse).mockResolvedValue(1000);
+    mockedAsync(chrome.storage.local.set).mockResolvedValue(undefined);
+    const entry = { translations: { ko: '번역' }, timestamp: Date.now() };
+    await new ChromeStorageCache().setMany(new Map([['a', entry], ['b', entry]]));
+    expect(chrome.storage.local.getBytesInUse).toHaveBeenCalledTimes(1);
+    expect(chrome.storage.local.set).toHaveBeenCalledTimes(1);
+    expect(chrome.storage.local.set).toHaveBeenCalledWith({ cache_a: entry, cache_b: entry });
+  });
+});
