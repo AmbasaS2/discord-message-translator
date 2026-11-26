@@ -88,10 +88,11 @@
         <h2 class="card-title text-base" data-i18n="basa_connections">API connections</h2>
         <p class="text-xs text-base-content/60" data-i18n="basa_connectionsHint">Add connections independently of the incoming and outgoing engines. Select the saved service/model separately for each direction.</p>
         <!-- Google API Key -->
-        <details class="basa-connection-details"><summary class="text-sm font-medium">Google Translate API</summary>
+        <details class="basa-connection-details basa-api-provider">
+          <summary class="text-sm font-medium" data-i18n="options_googleTranslateApi">Google Translate API</summary>
         <div id="googleApiKeySection" class="space-y-1">
           <div class="flex items-center justify-between">
-            <span class="text-sm font-medium" data-i18n="options_googleTranslateApi">Google Translate API</span>
+            <label for="googleApiKey" class="text-xs font-medium" data-i18n="options_apiKey">API Key</label>
             <a href="https://cloud.google.com/translate/docs" target="_blank" class="link link-primary text-xs" data-i18n="options_getApiKey">Get API Key</a>
           </div>
           <div class="relative">
@@ -108,10 +109,11 @@
 
         </details>
         <!-- DeepL API Key -->
-        <details class="basa-connection-details"><summary class="text-sm font-medium">DeepL API</summary>
+        <details class="basa-connection-details basa-api-provider">
+          <summary class="text-sm font-medium" data-i18n="options_deeplApi">DeepL API</summary>
         <div id="deeplApiKeySection" class="space-y-1">
           <div class="flex items-center justify-between">
-            <span class="text-sm font-medium" data-i18n="options_deeplApi">DeepL API</span>
+            <label for="deeplApiKey" class="text-xs font-medium" data-i18n="options_apiKey">API Key</label>
             <a href="https://www.deepl.com/pro-api" target="_blank" class="link link-primary text-xs" data-i18n="options_getApiKey">Get API Key</a>
           </div>
           <div class="relative">
@@ -128,21 +130,17 @@
         </div>
 
         </details>
-        <!-- OpenAI Section -->
-        <div id="openaiApiSection" class="space-y-2 basa-ai-connections">
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-sm font-medium" data-i18n="basa_aiConnections">AI connections</span>
-            <div class="flex items-center gap-3">
-              <button type="button" id="addOpenaiPreset" class="btn btn-xs btn-primary" data-i18n="basa_addConnection">Add connection</button>
-            </div>
-          </div>
-
+        <!-- AI connections -->
+        <details class="basa-connection-details basa-api-provider" open>
+          <summary class="text-sm font-medium">AI API</summary>
+          <div id="openaiApiSection" class="space-y-2 basa-ai-connections">
           <p class="text-xs text-base-content/60" data-i18n="basa_supportedAiServices">NanoGPT · OpenAI · OpenRouter · Custom API</p>
           <ul id="openaiPresetList" class="space-y-1"></ul>
           <p id="openaiPresetEmpty" class="text-xs text-base-content/60" data-i18n="basa_noSavedConnections">No saved connections. Select Add connection to configure a service and model.</p>
+          <button type="button" id="addOpenaiPreset" class="btn btn-sm btn-outline w-full basa-api-add" data-i18n="basa_addConnection">Add connection</button>
 
           <template id="openaiPresetItemTemplate">
-            <li class="flex items-center gap-2 rounded-lg bg-base-200 px-3 py-2">
+            <li class="flex items-center gap-2 rounded-lg px-3 py-2 basa-api-saved">
               <div class="flex min-w-0 flex-1 flex-col">
                 <span data-role="name" class="text-sm font-medium truncate"></span>
                 <span data-role="meta" class="text-xs text-base-content/60 truncate"></span>
@@ -223,7 +221,8 @@
               <button type="submit" id="saveOpenaiPreset" class="btn btn-sm btn-primary" data-i18n="options_save">Save</button>
             </div>
           </form>
-        </div>
+          </div>
+        </details>
 
       </div>
     </div>

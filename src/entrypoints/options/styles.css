@@ -39,3 +39,27 @@ body.basa-options {
 .basa-connection-details[open] > summary { margin-bottom: 8px; }
 .basa-ai-connections { min-width: 0; }
 .basa-options [hidden] { display: none !important; }
+
+/* The three provider groups share the same native disclosure-card styling. */
+#apiConnections .basa-api-provider > summary {
+  color: var(--basa-ink);
+  font-weight: 600;
+}
+#apiConnections .basa-api-provider > summary:focus-visible {
+  outline: 2px solid var(--basa-accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+#apiConnections .basa-api-provider[open] > summary { margin-bottom: 12px; }
+#apiConnections .basa-api-saved {
+  background: var(--basa-panel);
+  border: 1px solid var(--basa-line);
+}
+#apiConnections .basa-api-add {
+  background: transparent;
+  color: var(--basa-ink);
+  border-color: var(--basa-line);
+  font-weight: 600;
+}
+#apiConnections .basa-api-add::before { content: "+"; }
+#apiConnections .basa-api-add:hover { background: var(--basa-hover); }
