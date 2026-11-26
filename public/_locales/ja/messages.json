@@ -200,10 +200,10 @@
     "message": "エンドポイントが受け付けるモデル名"
   },
   "options_extraBody": {
-    "message": "追加リクエストボディ (JSON)"
+    "message": "追加モデルパラメータ (JSON)"
   },
   "options_extraBodyHint": {
-    "message": "すべてのリクエストに追加される JSON オブジェクト (任意)。例: {\"reasoning_effort\": \"low\"}。null を指定するとそのフィールドを送信しません。例: {\"max_tokens\": null}"
+    "message": "モデルに追加設定が必要な場合のみ入力してください。翻訳プロンプトではありません。例: {\"reasoning_effort\":\"low\"}。null はパラメータを省略します。"
   },
   "options_extraBodyInvalid": {
     "message": "JSON が不正なため保存していません: $ERROR$",
@@ -381,7 +381,7 @@
     "message": "送信 AI 翻訳プロンプト"
   },
   "basa_draftPromptHint": {
-    "message": "翻訳スタイルを変更できます。対象言語、原文の範囲、出力形式は常に維持されます。専用翻訳モデルはカスタムプロンプトをサポートしない場合があります。"
+    "message": "既定のスタイル指示を編集・復元できます。オフにしても保存したプロンプトは残り、必須の翻訳指示のみ送信します。専用翻訳モデルではスタイル指示が使えない場合があります。"
   },
   "basa_resetPrompt": {
     "message": "初期値に戻す"
@@ -394,5 +394,11 @@
   },
   "basa_keyOriginChanged": {
     "message": "API ホストが変更されました。新しいホストのキーを入力してください。"
+  },
+  "basa_draftPromptEnabled": {
+    "message": "詳細翻訳プロンプトを使用"
+  },
+  "basa_advancedApi": {
+    "message": "高度な API 設定（任意）"
   }
 }

@@ -7,6 +7,7 @@ interface OpenAIConfig {
   extraBody?: string;
   purpose?: TranslationPurpose;
   draftPrompt?: string;
+  draftPromptEnabled?: boolean;
 }
 
 interface ChatMessage {
@@ -265,7 +266,7 @@ export class OpenAICompatibleClient {
     const targetLanguageName = this.getLanguageName(targetLang);
 
     const systemPrompt = buildTranslationSystemPrompt(
-      targetLanguageName, this.config.purpose ?? 'incoming', 'single', this.config.draftPrompt,
+      targetLanguageName, this.config.purpose ?? 'incoming', 'single', this.config.draftPrompt, this.config.draftPromptEnabled,
     );
 
     const messages: ChatMessage[] = [
@@ -313,7 +314,7 @@ export class OpenAICompatibleClient {
     const targetLanguageName = this.getLanguageName(targetLang);
 
     const systemPrompt = buildTranslationSystemPrompt(
-      targetLanguageName, this.config.purpose ?? 'incoming', 'batch', this.config.draftPrompt,
+      targetLanguageName, this.config.purpose ?? 'incoming', 'batch', this.config.draftPrompt, this.config.draftPromptEnabled,
     );
 
     const messages: ChatMessage[] = [

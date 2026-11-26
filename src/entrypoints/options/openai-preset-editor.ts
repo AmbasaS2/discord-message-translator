@@ -23,6 +23,7 @@ const baseUrlInput = document.getElementById('presetBaseUrl') as HTMLInputElemen
 const modelInput = document.getElementById('presetModel') as HTMLInputElement;
 const apiKeyInput = document.getElementById('presetApiKey') as HTMLInputElement;
 const toggleApiKeyVisibility = document.getElementById('togglePresetApiKeyVisibility') as HTMLButtonElement;
+const advancedSettings = document.getElementById('presetAdvancedSettings') as HTMLDetailsElement;
 const extraBodyInput = document.getElementById('presetExtraBody') as HTMLTextAreaElement;
 const extraBodyError = document.getElementById('presetExtraBodyError') as HTMLParagraphElement;
 const testResult = document.getElementById('presetTestResult') as HTMLParagraphElement;
@@ -113,6 +114,7 @@ function validate(): void {
   extraBodyError.textContent = parsed.ok ? '' : t('options_extraBodyInvalid', [parsed.error]);
   extraBodyError.classList.toggle('hidden', parsed.ok);
   extraBodyInput.classList.toggle('textarea-error', !parsed.ok);
+  if (!parsed.ok) advancedSettings.open = true;
 
   let validUrl = false;
   try { normalizeModelBaseUrl(baseUrlInput.value); validUrl = true; } catch { /* still editing */ }
@@ -168,6 +170,7 @@ function openForm(preset?: OpenAIPreset): void {
   keyOrigin = apiOrigin(baseUrlInput.value);
   apiKeyInput.type = 'password';
   extraBodyInput.value = preset?.extraBody ?? '';
+  advancedSettings.open = Boolean(extraBodyInput.value.trim());
   showTestResult('', null);
   showServiceLink();
   validate();

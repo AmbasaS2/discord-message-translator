@@ -36,6 +36,7 @@ const draftTarget = document.getElementById('draftTargetLanguage') as HTMLSelect
 const draftProvider = document.getElementById('draftProvider') as HTMLSelectElement;
 const draftPreset = document.getElementById('draftOpenaiPresetId') as HTMLSelectElement;
 const draftField = document.getElementById('draftConnectionField') as HTMLElement;
+const promptEnabled = document.getElementById('draftPromptEnabled') as HTMLInputElement;
 const promptInput = document.getElementById('draftTranslationPrompt') as HTMLTextAreaElement;
 const savePromptButton = document.getElementById('saveDraftPrompt') as HTMLButtonElement;
 const resetPromptButton = document.getElementById('resetDraftPrompt') as HTMLButtonElement;
@@ -155,6 +156,7 @@ async function loadSettings() {
   draftEnabled.checked = settings.draftEnabled;
   draftTarget.value = settings.draftTargetLanguage;
   draftProvider.value = settings.draftProvider;
+  promptEnabled.checked = settings.draftPromptEnabled;
   promptInput.value = settings.draftTranslationPrompt.trim() || DEFAULT_DRAFT_TRANSLATION_PROMPT;
   refreshConnections(settings);
   setupOpenaiPresetEditor(settings, refreshConnections);
@@ -243,6 +245,7 @@ draftPreset.addEventListener('change', () => {
   saveEngineChange({ draftOpenaiPresetId: draftPreset.value || null });
   updateApiSectionVisibility(translationProviderSelect.value);
 });
+promptEnabled.addEventListener('change', () => saveEngineChange({ draftPromptEnabled: promptEnabled.checked }));
 async function storeDraftPrompt(value: string): Promise<void> {
   try {
     await updateSettings({ draftTranslationPrompt: value === DEFAULT_DRAFT_TRANSLATION_PROMPT ? '' : value });

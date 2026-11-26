@@ -102,10 +102,14 @@
           <select id="draftOpenaiPresetId" class="select select-sm w-full"></select>
         </label>
         <p class="text-xs text-base-content/60" data-i18n="basa_draftHint">Drafts are translated only when you press the button. Non-local providers send the draft to the configured service. Nothing is sent to Discord automatically.</p>
-        <details class="basa-connection-details">
+        <details class="basa-connection-details" open>
           <summary class="text-sm font-medium" data-i18n="basa_draftPrompt">Draft AI translation prompt</summary>
           <div class="space-y-2 pt-3">
-            <p class="text-xs text-base-content/60" data-i18n="basa_draftPromptHint">Customize the AI translation style. Language, source boundaries and output format are always enforced. Specialized translation models may not support custom prompts.</p>
+            <label class="label cursor-pointer justify-between gap-3">
+              <span class="text-sm" data-i18n="basa_draftPromptEnabled">Use detailed translation prompt</span>
+              <input type="checkbox" id="draftPromptEnabled" class="toggle toggle-primary toggle-sm" checked />
+            </label>
+            <p class="text-xs text-base-content/60" data-i18n="basa_draftPromptHint">Edit or restore the built-in style prompt. Turn it off to use only the mandatory translation instructions; the saved prompt is retained. Specialized translation models may not support style prompts.</p>
             <textarea id="draftTranslationPrompt" class="textarea textarea-sm w-full" rows="9" spellcheck="false" aria-label="Draft AI translation prompt"></textarea>
             <div class="flex justify-end gap-2">
               <button type="button" id="resetDraftPrompt" class="btn btn-sm btn-ghost" data-i18n="basa_resetPrompt">Reset to default</button>
@@ -235,7 +239,9 @@
               <p id="presetModelsStatus" class="text-xs text-base-content/60" aria-live="polite"></p>
               <p class="text-xs text-base-content/60" data-i18n="basa_modelHint">Choose a loaded model or type the exact model ID.</p>
             </div>
-            <div class="flex flex-col w-full">
+            <details id="presetAdvancedSettings" class="basa-connection-details">
+              <summary class="text-sm font-medium" data-i18n="basa_advancedApi">Advanced API options (optional)</summary>
+              <div class="flex flex-col w-full">
               <label class="label py-0" for="presetExtraBody">
                 <span class="text-xs" data-i18n="options_extraBody">Extra request body (JSON)</span>
               </label>
@@ -244,7 +250,8 @@
                 class="textarea textarea-sm w-full font-mono"></textarea>
               <p id="presetExtraBodyError" class="text-xs text-error hidden"></p>
               <p class="text-xs text-base-content/60" data-i18n="options_extraBodyHint">Optional JSON object merged into every request, e.g. {"reasoning_effort": "low"}. Set a field to null to remove it, e.g. {"max_tokens": null}.</p>
-            </div>
+              </div>
+            </details>
             <p id="presetTestResult" class="hidden whitespace-pre-wrap break-words text-xs"></p>
             <div class="flex justify-end gap-2">
               <button type="button" id="testOpenaiPreset" class="btn btn-sm btn-outline" data-i18n="options_testConnection">Test</button>

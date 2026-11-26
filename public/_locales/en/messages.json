@@ -200,10 +200,10 @@
     "message": "Model name as expected by the endpoint"
   },
   "options_extraBody": {
-    "message": "Extra request body (JSON)"
+    "message": "Additional model parameters (JSON)"
   },
   "options_extraBodyHint": {
-    "message": "Optional JSON object merged into every request, e.g. {\"reasoning_effort\": \"low\"}. Set a field to null to remove it, e.g. {\"max_tokens\": null}."
+    "message": "Leave empty unless your model needs extra parameters, e.g. {\"reasoning_effort\":\"low\"}. This is not a translation prompt. Use null to omit a parameter."
   },
   "options_extraBodyInvalid": {
     "message": "Invalid JSON, not saved: $ERROR$",
@@ -453,7 +453,7 @@
     "message": "Outgoing AI translation prompt"
   },
   "basa_draftPromptHint": {
-    "message": "Customize the AI translation style. The target language, source boundary and response format remain mandatory. Specialized translation models may not support custom prompts."
+    "message": "Edit or restore the built-in style prompt. Turn it off to use only the mandatory translation instructions; your saved prompt is retained. Specialized translation models may not support style prompts."
   },
   "basa_resetPrompt": {
     "message": "Reset to default"
@@ -463,5 +463,11 @@
   },
   "basa_keyOriginChanged": {
     "message": "API host changed. Enter the key for the new host."
+  },
+  "basa_draftPromptEnabled": {
+    "message": "Use detailed translation prompt"
+  },
+  "basa_advancedApi": {
+    "message": "Advanced API options (optional)"
   }
 }

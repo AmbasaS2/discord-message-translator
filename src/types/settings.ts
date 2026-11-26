@@ -29,6 +29,7 @@ export interface Settings {
   draftTargetLanguage: string;
   draftProvider: 'inherit' | 'chrome-builtin' | 'google' | 'deepl' | 'openai';
   draftOpenaiPresetId: string | null;
+  draftPromptEnabled: boolean; // Include the detailed draft style guidance.
   draftTranslationPrompt: string; // Empty uses the built-in draft translation prompt.
 
   // Cache settings
@@ -56,6 +57,7 @@ export const DEFAULT_SETTINGS: Settings = {
   draftTargetLanguage: 'en',
   draftProvider: 'chrome-builtin',
   draftOpenaiPresetId: null,
+  draftPromptEnabled: true,
   draftTranslationPrompt: '',
   cacheTTLDays: 7,
   showOriginalOnHover: false,

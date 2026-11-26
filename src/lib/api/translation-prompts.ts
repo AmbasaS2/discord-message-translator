@@ -14,6 +14,7 @@ export function buildTranslationSystemPrompt(
   purpose: TranslationPurpose,
   format: 'single' | 'batch',
   customDraftPrompt?: string,
+  draftPromptEnabled = true,
 ): string {
   const style = purpose === 'draft'
     ? customDraftPrompt?.trim() || DEFAULT_DRAFT_TRANSLATION_PROMPT
@@ -22,9 +23,7 @@ export function buildTranslationSystemPrompt(
     ? 'Input is a JSON array of objects with numeric "id" and string "text". Translate each text independently. Return only a JSON array of objects with the same ids, order and item count, and the translated text values. No prose or code fences.'
     : 'Return only one translated text, with no labels, explanations, analysis, surrounding quotation marks, added wrappers or added code fences.';
   return [
-    'Translation style:',
-    style,
-    '',
+    ...(purpose !== 'draft' || draftPromptEnabled ? ['Translation style:', style, ''] : []),
     'Mandatory translation contract (takes precedence over conflicting style instructions):',
     `Translate into ${targetLanguage}. Detect the source language automatically.`,
     SOURCE_CONTRACT,

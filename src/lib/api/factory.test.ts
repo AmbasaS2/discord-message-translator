@@ -48,6 +48,15 @@ describe('createTranslationClient (openai)', () => {
     );
   });
 
+  it('passes the saved draft style and its independent toggle without changing incoming options', () => {
+    const settings = { ...openaiSettings([preset()], 'p1'), draftTranslationPrompt: 'Keep casual phrasing.', draftPromptEnabled: false };
+    createTranslationClient(settings, 'draft');
+    expect(OpenAICompatibleClient).toHaveBeenCalledWith(
+      expect.objectContaining({ purpose: 'draft', draftPrompt: 'Keep casual phrasing.', draftPromptEnabled: false }),
+      requestCompletionViaBackground,
+    );
+  });
+
   it('uses the first preset when the active id is stale', () => {
     createTranslationClient(openaiSettings([preset(), preset({ id: 'p2', model: 'm2' })], 'gone'));
 

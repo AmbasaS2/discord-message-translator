@@ -200,10 +200,10 @@
     "message": "엔드포인트에서 요구하는 모델명"
   },
   "options_extraBody": {
-    "message": "추가 요청 본문 (JSON)"
+    "message": "추가 모델 매개변수 (JSON)"
   },
   "options_extraBodyHint": {
-    "message": "모든 요청에 병합할 선택적 JSON 객체. 예: {\"reasoning_effort\": \"low\"}. 필드를 제거하려면 null을 지정하세요."
+    "message": "모델에 추가 설정이 필요한 경우가 아니라면 비워두세요. 예: {\"reasoning_effort\":\"low\"}. 번역 프롬프트를 넣는 곳이 아닙니다. null을 지정하면 해당 매개변수를 생략합니다."
   },
   "options_extraBodyInvalid": {
     "message": "유효하지 않은 JSON으로 저장되지 않았습니다: $ERROR$",
@@ -453,7 +453,7 @@
     "message": "발신 AI 번역 프롬프트"
   },
   "basa_draftPromptHint": {
-    "message": "AI 번역 스타일을 수정할 수 있어요. 대상 언어, 원문 범위, 출력 형식은 항상 유지됩니다. 일부 전용 번역 모델은 사용자 프롬프트를 지원하지 않아요."
+    "message": "기본 프롬프트를 수정하거나 복원할 수 있어요. 끄면 필수 번역 지시만 전송하며 저장한 프롬프트는 유지됩니다. 일부 전용 번역 모델은 스타일 프롬프트를 지원하지 않아요."
   },
   "basa_resetPrompt": {
     "message": "기본값 복원"
@@ -463,5 +463,11 @@
   },
   "basa_keyOriginChanged": {
     "message": "API 서버 주소가 바뀌었어요. 새 서버의 API 키를 입력하세요."
+  },
+  "basa_draftPromptEnabled": {
+    "message": "상세 번역 프롬프트 사용"
+  },
+  "basa_advancedApi": {
+    "message": "고급 API 설정 (선택 사항)"
   }
 }

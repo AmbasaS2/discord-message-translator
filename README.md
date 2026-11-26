@@ -235,3 +235,9 @@ Composer globe, rotate-left and copy icons: [Font Awesome Free 6.7.2](https://gi
 ### Independent translation engines and AI connections
 
 The popup and settings page let incoming messages and outgoing drafts use different translation engines, target languages and AI connections. Configure NanoGPT (standard or subscription endpoint), OpenAI, OpenRouter or a custom OpenAI-compatible endpoint under API connections, regardless of the active incoming engine. Load models on demand or enter an exact model ID; keys stay in local extension storage. Selecting a remote incoming engine may send visible messages to that provider and incur charges. The outgoing AI style prompt is adapted from Phrase Desk and can be customized in settings. The mandatory source/language/output contract remains in force. Specialized PLaMo translation models continue to use their native template. No additional chat observer or polling is introduced.
+
+### Draft prompt and release numbering
+
+The outgoing detailed style prompt is enabled by default and editable in settings. Turning it off retains the saved style and sends only the mandatory translation contract; it does not disable translation. Optional JSON model parameters are under Advanced API options and normally remain empty.
+
+Future verified builds use ordinary three-part version numbers in the package, manifest, release tag and ZIP filename (for example `2.1.2`, `v2.1.2`). Earlier revision-tagged releases remain unchanged.

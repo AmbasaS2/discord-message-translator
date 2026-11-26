@@ -49,7 +49,7 @@ export function createTranslationClient(settings: Settings, purpose: Translation
         baseUrl: preset.baseUrl,
         model: preset.model,
         extraBody: preset.extraBody,
-        ...(purpose === 'draft' ? { purpose, draftPrompt: settings.draftTranslationPrompt } : {}),
+        ...(purpose === 'draft' ? { purpose, draftPrompt: settings.draftTranslationPrompt, draftPromptEnabled: settings.draftPromptEnabled } : {}),
       }, requestCompletionViaBackground);
     }
 
