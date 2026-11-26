@@ -1,7 +1,7 @@
 import type { AvailabilityStatus } from '@/lib/api/chrome-builtin';
 import { getSettings, updateSettings } from '@/lib/utils/settings';
 import { getActiveOpenaiPreset } from '@/lib/utils/openai-presets';
-import { populateAiConnections, updateAiProviderLabel } from '@/lib/ui/ai-connections';
+import { populateAiConnections, updateAiProviderLabel, chooseExplicitDraftConnection } from '@/lib/ui/ai-connections';
 import { DEFAULT_DRAFT_TRANSLATION_PROMPT } from '@/lib/api/translation-prompts';
 import type { Settings } from '@/types/settings';
 import { createStorage } from '@/lib/cache/factory';
@@ -61,8 +61,8 @@ applyI18n();
 // Connection management remains available regardless of either engine.
 function updateApiSectionVisibility(provider: string) {
   chromeBuiltinSection.classList.toggle('hidden', provider !== 'chrome-builtin');
-  incomingField.classList.toggle('hidden', provider !== 'openai');
-  draftField.classList.toggle('hidden', draftProvider.value !== 'openai');
+  incomingField.hidden = provider !== 'openai';
+  draftField.hidden = draftProvider.value !== 'openai';
   if (!current) return;
   const fallback = getActiveOpenaiPreset(current);
   updateAiProviderLabel(translationProviderSelect, current.openaiPresets, incomingPreset.value, fallback);
@@ -229,7 +229,14 @@ incomingPreset.addEventListener('change', () => {
 draftEnabled.addEventListener('change', () => saveEngineChange({ draftEnabled: draftEnabled.checked }));
 draftTarget.addEventListener('change', () => saveEngineChange({ draftTargetLanguage: draftTarget.value }));
 draftProvider.addEventListener('change', () => {
-  saveEngineChange({ draftProvider: draftProvider.value as Settings['draftProvider'] });
+  const provider = draftProvider.value as Settings['draftProvider'];
+  const updates: Partial<Settings> = { draftProvider: provider };
+  if (provider === 'openai' && current && current.draftProvider !== 'openai') {
+    const id = chooseExplicitDraftConnection(current);
+    updates.draftOpenaiPresetId = id;
+    draftPreset.value = id ?? '';
+  }
+  saveEngineChange(updates);
   updateApiSectionVisibility(translationProviderSelect.value);
 });
 draftPreset.addEventListener('change', () => {
@@ -239,6 +246,7 @@ draftPreset.addEventListener('change', () => {
 async function storeDraftPrompt(value: string): Promise<void> {
   try {
     await updateSettings({ draftTranslationPrompt: value === DEFAULT_DRAFT_TRANSLATION_PROMPT ? '' : value });
+    if (!value) promptInput.value = DEFAULT_DRAFT_TRANSLATION_PROMPT;
     showToast(t('status_saved'));
   } catch { showToast(t('status_saveFailed'), 'error'); }
 }

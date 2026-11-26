@@ -343,7 +343,7 @@
     "message": "Same as incoming"
   },
   "basa_currentPreset": {
-    "message": "Current incoming preset"
+    "message": "Use the selected incoming AI connection"
   },
   "basa_draftHint": {
     "message": "Drafts are translated only when you press the button. Non-local providers send the draft to the configured service. Nothing is sent to Discord automatically."
@@ -457,5 +457,11 @@
   },
   "basa_resetPrompt": {
     "message": "Reset to default"
+  },
+  "basa_addConnectionFirst": {
+    "message": "AI API — add a connection in settings"
+  },
+  "basa_keyOriginChanged": {
+    "message": "API host changed. Enter the key for the new host."
   }
 }

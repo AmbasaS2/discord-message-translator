@@ -36,6 +36,7 @@ const modelsButton = document.getElementById('loadPresetModels') as HTMLButtonEl
 const modelList = document.getElementById('presetModelList') as HTMLDataListElement;
 const modelsStatus = document.getElementById('presetModelsStatus') as HTMLElement;
 let modelRequest: AbortController | null = null;
+let keyOrigin: string | null = null;
 let connectionsChanged: ((settings: Settings) => void) | undefined;
 
 let state: PresetState = { openaiPresets: [], activeOpenaiPresetId: null };
@@ -47,7 +48,7 @@ function readForm(id: string): OpenAIPreset {
   return {
     id,
     name: nameInput.value.trim(),
-    baseUrl: baseUrlInput.value.trim(),
+    baseUrl: normalizeModelBaseUrl(baseUrlInput.value),
     model: modelInput.value.trim(),
     apiKey: apiKeyInput.value.trim(),
     ...(extraBody ? { extraBody } : {}),
@@ -132,6 +133,20 @@ function clearModelList(): void {
   modelsStatus.textContent = '';
 }
 
+function apiOrigin(baseUrl: string): string | null {
+  try { return new URL(normalizeModelBaseUrl(baseUrl)).origin; } catch { return null; }
+}
+
+function clearKeyIfOriginChanged(): void {
+  const origin = apiOrigin(baseUrlInput.value);
+  if (apiKeyInput.value && origin !== keyOrigin) {
+    apiKeyInput.value = '';
+    clearModelList();
+    modelsStatus.textContent = t('basa_keyOriginChanged');
+  }
+  keyOrigin = origin;
+}
+
 function showServiceLink(): void {
   const service = inferApiService(baseUrlInput.value);
   const metadata = API_SERVICES[service];
@@ -150,6 +165,7 @@ function openForm(preset?: OpenAIPreset): void {
   baseUrlInput.value = preset?.baseUrl ?? API_SERVICES[service].baseUrl;
   modelInput.value = preset?.model ?? '';
   apiKeyInput.value = preset?.apiKey ?? '';
+  keyOrigin = apiOrigin(baseUrlInput.value);
   apiKeyInput.type = 'password';
   extraBodyInput.value = preset?.extraBody ?? '';
   showTestResult('', null);
@@ -178,11 +194,19 @@ cancelButton.addEventListener('click', closeForm);
 setupPasswordToggle(toggleApiKeyVisibility, apiKeyInput);
 
 for (const input of [nameInput, modelInput, extraBodyInput]) input.addEventListener('input', validate);
-apiKeyInput.addEventListener('input', () => { clearModelList(); validate(); });
+apiKeyInput.addEventListener('input', () => {
+  keyOrigin = apiOrigin(baseUrlInput.value);
+  clearModelList();
+  validate();
+});
 baseUrlInput.addEventListener('input', () => {
   clearModelList();
   serviceSelect.value = inferApiService(baseUrlInput.value);
   showServiceLink();
+  validate();
+});
+baseUrlInput.addEventListener('change', () => {
+  clearKeyIfOriginChanged();
   validate();
 });
 serviceSelect.addEventListener('change', () => {
@@ -190,18 +214,17 @@ serviceSelect.addEventListener('change', () => {
   const previous = inferApiService(baseUrlInput.value);
   const next = API_SERVICES[service];
   if (!nameInput.value.trim() || nameInput.value === serviceLabel(previous)) nameInput.value = serviceLabel(service);
-  const oldOrigin = endpointOriginPattern(baseUrlInput.value);
-  const newOrigin = endpointOriginPattern(next.baseUrl);
-  if (oldOrigin !== newOrigin) apiKeyInput.value = '';
   baseUrlInput.value = next.baseUrl;
   modelInput.value = '';
   clearModelList();
+  clearKeyIfOriginChanged();
   showServiceLink();
   validate();
 });
 
 modelsButton.addEventListener('click', async () => {
   if (editingId === null || modelRequest) return;
+  clearKeyIfOriginChanged();
   const id = editingId;
   const baseUrl = baseUrlInput.value.trim();
   const apiKey = apiKeyInput.value;
@@ -239,6 +262,9 @@ modelsButton.addEventListener('click', async () => {
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (editingId === null) return;
+  clearKeyIfOriginChanged();
+  validate();
+  if (saveButton.disabled) return;
   const preset = readForm(editingId);
   // Saved whether or not access is granted; Test reports a missing permission.
   await requestEndpointAccess(preset.baseUrl);
@@ -251,7 +277,11 @@ form.addEventListener('submit', async (event) => {
 });
 
 testButton.addEventListener('click', async () => {
-  const preset = readForm(editingId ?? '');
+  if (editingId === null) return;
+  clearKeyIfOriginChanged();
+  validate();
+  if (testButton.disabled) return;
+  const preset = readForm(editingId);
   if (!(await requestEndpointAccess(preset.baseUrl))) {
     showTestResult(t('options_testPermissionDenied'), 'error');
     return;

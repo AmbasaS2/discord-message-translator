@@ -46,6 +46,11 @@ export function populateAiConnections(
   select.value = chosen;
 }
 
+export function chooseExplicitDraftConnection(settings: Settings): string | null {
+  const chosen = settings.openaiPresets.find((preset) => preset.id === settings.draftOpenaiPresetId);
+  return chosen?.id ?? getActiveOpenaiPreset(settings)?.id ?? null;
+}
+
 export function updateAiProviderLabel(
   provider: HTMLSelectElement,
   presets: OpenAIPreset[],
@@ -54,8 +59,9 @@ export function updateAiProviderLabel(
 ): void {
   const option = provider.querySelector<HTMLOptionElement>('option[value="openai"]');
   if (!option) return;
+  option.disabled = presets.length === 0;
   const preset = presets.find((item) => item.id === selected) ?? (selected ? null : fallback);
   option.textContent = preset
     ? `${serviceLabel(inferApiService(preset.baseUrl))} · AI API`
-    : t('basa_providerAI');
+    : presets.length ? t('basa_providerAI') : t('basa_addConnectionFirst');
 }

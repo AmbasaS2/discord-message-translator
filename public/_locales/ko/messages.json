@@ -343,7 +343,7 @@
     "message": "수신과 동일"
   },
   "basa_currentPreset": {
-    "message": "현재 수신 프리셋"
+    "message": "수신에서 선택한 AI 연결 사용"
   },
   "basa_draftHint": {
     "message": "버튼을 누를 때만 초안을 번역합니다. 외부 엔진을 선택하면 설정된 서비스에 초안이 전달됩니다. Discord에 자동 전송하지 않습니다."
@@ -457,5 +457,11 @@
   },
   "basa_resetPrompt": {
     "message": "기본값 복원"
+  },
+  "basa_addConnectionFirst": {
+    "message": "AI API — 상세 설정에서 연결 추가"
+  },
+  "basa_keyOriginChanged": {
+    "message": "API 서버 주소가 바뀌었어요. 새 서버의 API 키를 입력하세요."
   }
 }

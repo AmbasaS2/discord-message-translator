@@ -387,6 +387,12 @@
     "message": "初期値に戻す"
   },
   "basa_currentPreset": {
-    "message": "受信で選択した接続"
+    "message": "受信で選択した AI 接続を使用"
+  },
+  "basa_addConnectionFirst": {
+    "message": "AI API — 詳細設定で接続を追加"
+  },
+  "basa_keyOriginChanged": {
+    "message": "API ホストが変更されました。新しいホストのキーを入力してください。"
   }
 }

@@ -1,7 +1,7 @@
 
 import { getSettings } from '@/lib/utils/settings';
 import { getActiveOpenaiPreset } from '@/lib/utils/openai-presets';
-import { populateAiConnections, updateAiProviderLabel } from '@/lib/ui/ai-connections';
+import { populateAiConnections, updateAiProviderLabel, chooseExplicitDraftConnection } from '@/lib/ui/ai-connections';
 import { populateLanguageSelect } from '@/lib/utils/dom-helpers';
 import { applyI18n, t } from '@/lib/utils/i18n';
 import { showToast } from '@/lib/ui/toast';
@@ -80,7 +80,14 @@ incomingPreset.addEventListener('change', () => {
 draftEnabled.addEventListener('change', () => save({ draftEnabled: draftEnabled.checked }));
 draftTarget.addEventListener('change', () => save({ draftTargetLanguage: draftTarget.value }));
 draftProvider.addEventListener('change', () => {
-  save({ draftProvider: draftProvider.value as Settings['draftProvider'] });
+  const provider = draftProvider.value as Settings['draftProvider'];
+  const updates: Partial<Settings> = { draftProvider: provider };
+  if (provider === 'openai' && current && current.draftProvider !== 'openai') {
+    const id = chooseExplicitDraftConnection(current);
+    updates.draftOpenaiPresetId = id;
+    draftPreset.value = id ?? '';
+  }
+  save(updates);
   updateConnectionVisibility();
 });
 draftPreset.addEventListener('change', () => {

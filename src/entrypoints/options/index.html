@@ -68,7 +68,7 @@
         </div>
 
 
-        <div id="incomingConnectionField" class="flex flex-col gap-1 hidden">
+        <div id="incomingConnectionField" class="flex flex-col gap-1" hidden>
           <label class="label" for="incomingOpenaiPresetId"><span class="text-sm" data-i18n="basa_connectionModel">AI connection / model</span></label>
           <select id="incomingOpenaiPresetId" class="select select-sm w-full"></select>
         </div>
@@ -97,7 +97,7 @@
             <option value="inherit" data-i18n="basa_inherit">Same as incoming</option>
           </select>
         </label>
-        <label id="draftConnectionField" class="basa-option-field hidden" for="draftOpenaiPresetId">
+        <label id="draftConnectionField" class="basa-option-field" hidden for="draftOpenaiPresetId">
           <span class="text-sm" data-i18n="basa_connectionModel">AI connection / model</span>
           <select id="draftOpenaiPresetId" class="select select-sm w-full"></select>
         </label>
@@ -211,16 +211,6 @@
             </div>
             <div class="flex flex-col w-full">
               <div class="flex items-center justify-between gap-2">
-                <label class="label py-0" for="presetModel"><span class="text-xs" data-i18n="options_model">Model</span></label>
-                <button type="button" id="loadPresetModels" class="btn btn-xs btn-outline" data-i18n="basa_loadModels">Load models</button>
-              </div>
-              <input type="text" id="presetModel" list="presetModelList" class="input input-sm w-full" autocomplete="off" />
-              <datalist id="presetModelList"></datalist>
-              <p id="presetModelsStatus" class="text-xs text-base-content/60" aria-live="polite"></p>
-              <p class="text-xs text-base-content/60" data-i18n="basa_modelHint">Choose a loaded model or type the exact model ID.</p>
-            </div>
-            <div class="flex flex-col w-full">
-              <div class="flex items-center justify-between gap-2">
                 <label class="label py-0" for="presetApiKey"><span class="text-xs" data-i18n="options_apiKey">API Key</span></label>
                 <a id="presetKeyLink" href="https://nano-gpt.com/api" target="_blank" rel="noopener noreferrer" class="link link-primary text-xs" data-i18n="options_getApiKey">Get API Key</a>
               </div>
@@ -234,6 +224,16 @@
                 </button>
               </div>
               <p class="text-xs text-base-content/60" data-i18n="options_presetApiKeyHint">Optional. Leave empty for servers that need no key. Stored on this device only.</p>
+            </div>
+            <div class="flex flex-col w-full">
+              <div class="flex items-center justify-between gap-2">
+                <label class="label py-0" for="presetModel"><span class="text-xs" data-i18n="options_model">Model</span></label>
+                <button type="button" id="loadPresetModels" class="btn btn-xs btn-outline" data-i18n="basa_loadModels">Load models</button>
+              </div>
+              <input type="text" id="presetModel" list="presetModelList" class="input input-sm w-full" autocomplete="off" />
+              <datalist id="presetModelList"></datalist>
+              <p id="presetModelsStatus" class="text-xs text-base-content/60" aria-live="polite"></p>
+              <p class="text-xs text-base-content/60" data-i18n="basa_modelHint">Choose a loaded model or type the exact model ID.</p>
             </div>
             <div class="flex flex-col w-full">
               <label class="label py-0" for="presetExtraBody">
