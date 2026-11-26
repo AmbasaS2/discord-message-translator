@@ -72,6 +72,88 @@ describe('MessageTranslationObserver', () => {
     expect(unobserve).toHaveBeenCalledWith(node);
   });
 
+  it('uses the existing mutation observer to update an edited message without reacting to its own output', async () => {
+    const node = message(101, 'Before edit.');
+    const content = node.querySelector<HTMLElement>('[id^="message-content-"]')!;
+    const source = content.firstChild as Text;
+    document.body.append(node);
+    vi.mocked(translateMessage).mockResolvedValueOnce('수정 전.').mockResolvedValueOnce('수정 후.');
+    observer.start();
+    await show(node);
+    const ownView = content.querySelector(translated)!;
+    onMutation([{ type: 'childList', target: content, addedNodes: [ownView], removedNodes: [] } as unknown as MutationRecord]);
+    await vi.advanceTimersByTimeAsync(120);
+    expect(translateMessage).toHaveBeenCalledTimes(1);
+    expect(content.querySelector(translated)).toBe(ownView);
+
+    source.data = 'After edit.';
+    onMutation([{ type: 'characterData', target: source, addedNodes: [], removedNodes: [] } as unknown as MutationRecord]);
+    expect(content.querySelector(translated)).toBeNull();
+    expect(content.textContent).toBe('After edit.');
+    await show(node);
+    expect(content.querySelector(translated)?.textContent).toBe('수정 후.');
+    expect(translateMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('discards an in-flight response for edited source and sends the new source on re-entry', async () => {
+    const node = message(101, 'Before edit.');
+    const content = node.querySelector<HTMLElement>('[id^="message-content-"]')!;
+    document.body.append(node);
+    let resolveOld!: (value: string) => void;
+    vi.mocked(translateMessage)
+      .mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }))
+      .mockResolvedValueOnce('수정 후.');
+    observer.start();
+    await show(node);
+    const signal = vi.mocked(translateMessage).mock.calls[0]![3]!;
+    const original = content.firstChild as Text;
+    original.data = 'After edit.';
+    onMutation([{ type: 'characterData', target: original, addedNodes: [], removedNodes: [] } as unknown as MutationRecord]);
+    expect(signal.aborted).toBe(true);
+    resolveOld('오래된 결과.');
+    await vi.advanceTimersByTimeAsync(120);
+    expect(content.querySelector(translated)).toBeNull();
+    await show(node);
+    expect(content.querySelector(translated)?.textContent).toBe('수정 후.');
+  });
+
+  it('cancels an entirely detached translation job using the existing mutation callback', async () => {
+    const node = message(101, 'Before leaving.');
+    document.body.append(node);
+    let resolveOld!: (value: string) => void;
+    vi.mocked(translateMessage).mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }));
+    observer.start();
+    await show(node);
+    const signal = vi.mocked(translateMessage).mock.calls[0]![3]!;
+    node.remove();
+    onMutation([{ type: 'childList', target: document.body, addedNodes: [], removedNodes: [node] } as unknown as MutationRecord]);
+    expect(signal.aborted).toBe(true);
+    resolveOld('늦은 결과.');
+    await vi.advanceTimersByTimeAsync(120);
+    expect(node.querySelector(translated)).toBeNull();
+  });
+
+  it('cancels outstanding requests on a settings change and on stop', async () => {
+    const node = message(101, 'Pending.');
+    document.body.append(node);
+    let finish!: (value: string) => void;
+    vi.mocked(translateMessage).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    observer.start();
+    await show(node);
+    const first = vi.mocked(translateMessage).mock.calls[0]![3]!;
+    observer.cancelOutstanding();
+    expect(first.aborted).toBe(true);
+    finish('이전 설정.');
+    await vi.advanceTimersByTimeAsync(120);
+    await show(node);
+    const next = vi.mocked(translateMessage).mock.calls[1]![3]!;
+    observer.stop();
+    expect(next.aborted).toBe(true);
+    finish('늦은 번역.');
+    await vi.advanceTimersByTimeAsync(120);
+    expect(node.querySelector(translated)).toBeNull();
+  });
+
   it('translates a remounted message with the same ID on channel re-entry', async () => {
     const original = message(101, 'Same message.');
     document.body.append(original);

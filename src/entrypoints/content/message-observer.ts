@@ -5,7 +5,7 @@ import { RequestQueue, debounce } from '@/lib/utils/async-control';
 import { ChromeLanguageDetector } from '@/lib/api/chrome-language-detector';
 import { extractBlocks, assembleTranslation, type StructuredBlock } from '@/lib/utils/structure-preserving';
 import { shouldSkipText } from './language-skip';
-import { collectBilingualLayout, renderBilingualLayout, bilingualUnitId, type BilingualLayout } from '@/lib/utils/bilingual-units';
+import { collectBilingualLayout, renderBilingualLayout, bilingualUnitId, clearTranslationView, readOriginalSource, type BilingualLayout } from '@/lib/utils/bilingual-units';
 import { SurfaceTranslator, isSearchSurface } from './surface-translator';
 
 /**
@@ -27,6 +27,19 @@ const BATCH_SIZE = 10; // Number of messages to translate in a single batch
 
 // Language detection constants
 const LANGUAGE_DETECTION_MIN_CONFIDENCE = 0.7; // Minimum confidence for language detection
+
+const MESSAGE_CONTAINER = '[id^="chat-messages-"], [id^="message-content-"]';
+const SOURCE_REGION = '[id^="message-content-"], [id^="message-accessories-"], [id^="message-reply-context-"]';
+const OWN_UI = '.discord-translator-translation, .basa-draft-tools, .basa-draft-feedback';
+const VIEW_SELECTOR = '.discord-translator-translation';
+
+interface SourceState { source: string; views: HTMLElement[] }
+interface TranslationJob {
+  controller: AbortController;
+  path: string;
+  messages: Array<[HTMLElement, string]>;
+  invalidated: Set<HTMLElement>;
+}
 
 interface BlockEntry {
   block: StructuredBlock;
@@ -61,6 +74,10 @@ export class MessageTranslationObserver {
   private translatedMessages = new WeakSet<HTMLElement>();
   private translatedElements = new WeakSet<HTMLElement>();
   private inFlightMessages = new WeakSet<HTMLElement>();
+  private sourceStates = new WeakMap<HTMLElement, Map<HTMLElement, SourceState>>();
+  private reobserveAfterJob = new WeakSet<HTMLElement>();
+  private jobs = new Set<TranslationJob>();
+  private requestEpoch = 0;
   private translationQueue: RequestQueue; // Request queue for rate limiting
   private pendingMessages = new Map<HTMLElement, string>();
   private processPendingDebounced: () => void;
@@ -106,44 +123,178 @@ export class MessageTranslationObserver {
 
     this.surfaces = new SurfaceTranslator(this.intersectionObserver);
 
-    // Mutation Observer: Detect new messages and register with Intersection Observer
+    // Reuse the existing observer for source edits. Character-data changes
+    // outside message bodies / registered surfaces need no processing.
     this.mutationObserver = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        const target = mutation.target;
-        if (target instanceof Element && target.closest('.discord-translator-translation, .discord-translator-original, .basa-draft-tools, .basa-draft-feedback')) return;
-        const ordinaryChat = target instanceof Element &&
-          target.closest('[id^="chat-messages-"], [id^="message-content-"], [id^="message-accessories-"]') !== null &&
-          !isSearchSurface(target);
-        mutation.removedNodes.forEach((node) => {
-          if (node instanceof Element && !ordinaryChat && !node.isConnected) this.surfaces.releaseSubtree(node);
-        });
-        if (!ordinaryChat && target instanceof Element) this.surfaces.refreshParent(target);
-        mutation.addedNodes.forEach((node) => {
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            const element = node as HTMLElement;
-            if (element.closest('.discord-translator-translation, .discord-translator-original, .basa-draft-tools, .basa-draft-feedback')) return;
-            if (!ordinaryChat) this.surfaces.scan(element);
-            if (isSearchSurface(element)) return;
-
-            // Check if the added element is a message container
-            if (element.id?.startsWith('chat-messages-')) {
-              this.observeMessage(element);
-              return;
-            }
-
-            // Check if element contains message containers
-            const messageContainers = element.querySelectorAll('[id^="chat-messages-"]');
-            messageContainers.forEach((container) => {
-              this.observeMessage(container as HTMLElement);
-            });
-
-            // Fallback: check with isDiscordMessage for legacy compatibility
-            if (messageContainers.length === 0 && isDiscordMessage(element)) {
-              this.observeMessage(element);
-            }
+      const dirty = new Set<HTMLElement>();
+      let removed = false;
+      for (const mutation of mutations) {
+        const target = mutation.target instanceof Element ? mutation.target : mutation.target.parentElement;
+        if (!target || target.closest(OWN_UI)) continue;
+        const search = isSearchSurface(target);
+        const container = search ? null :
+          (target.closest<HTMLElement>('[id^="chat-messages-"]') ?? target.closest<HTMLElement>('[id^="message-content-"]'));
+        const ordinaryChat = Boolean(container || (!search && target.closest(SOURCE_REGION)));
+        if (mutation.type === 'characterData') {
+          if (container && this.sourceStates.has(container) && target.closest(SOURCE_REGION)) dirty.add(container);
+          else if (!ordinaryChat && target.closest('[data-basa-surface]')) this.surfaces.refreshParent(target);
+          continue;
+        }
+        const added = Array.from(mutation.addedNodes);
+        const deleted = Array.from(mutation.removedNodes);
+        if (deleted.length) removed = true;
+        if (container && this.sourceStates.has(container)) {
+          if (target.closest(SOURCE_REGION) || [...added, ...deleted].some(node =>
+              node instanceof Element && (node.matches(SOURCE_REGION) || node.querySelector(SOURCE_REGION)))) {
+            dirty.add(container);
           }
-        });
-      });
+          // New children inside a tracked message are handled by reconciliation,
+          // not by another scan for message containers.
+          continue;
+        }
+        for (const node of deleted) {
+          if (node instanceof Element && !ordinaryChat && !node.isConnected) this.surfaces.releaseSubtree(node);
+        }
+        if (!ordinaryChat) this.surfaces.refreshParent(target);
+        for (const node of added) {
+          if (!(node instanceof HTMLElement) || node.closest(OWN_UI)) continue;
+          if (!ordinaryChat) this.surfaces.scan(node);
+          if (isSearchSurface(node)) continue;
+          if (node.id?.startsWith('chat-messages-')) {
+            this.observeMessage(node);
+            continue;
+          }
+          if (ordinaryChat) {
+            if (container) this.observeMessage(container);
+            continue;
+          }
+          const messageContainers = node.querySelectorAll<HTMLElement>('[id^="chat-messages-"]');
+          messageContainers.forEach(message => this.observeMessage(message));
+          if (!messageContainers.length && isDiscordMessage(node)) this.observeMessage(node);
+        }
+      }
+      for (const container of dirty) this.reconcileMessage(container);
+      if (this.jobs.size) this.cancelObsoleteJobs();
+      if (removed) this.surfaces.cancelObsoleteRequest();
+    });
+  }
+
+  private captureSource(parent: HTMLElement, element: HTMLElement): SourceState {
+    let states = this.sourceStates.get(parent);
+    if (!states) { states = new Map(); this.sourceStates.set(parent, states); }
+    const existing = states.get(element);
+    if (existing) return existing;
+    const views = Array.from(element.querySelectorAll<HTMLElement>(VIEW_SELECTOR));
+    const state = { source: views.length ? readOriginalSource(element) : element.textContent ?? '', views };
+    states.set(element, state);
+    return state;
+  }
+
+  private stateCurrent(parent: HTMLElement, element: HTMLElement, state: SourceState): boolean {
+    return this.sourceStates.get(parent)?.get(element) === state &&
+      element.isConnected && (parent === element || parent.contains(element)) &&
+      state.views.every(view => element.contains(view)) &&
+      readOriginalSource(element) === state.source;
+  }
+
+  private markElement(parent: HTMLElement, element: HTMLElement, state: SourceState): void {
+    if (this.sourceStates.get(parent)?.get(element) !== state) return;
+    state.views = Array.from(element.querySelectorAll<HTMLElement>(VIEW_SELECTOR));
+    this.translatedElements.add(element);
+  }
+
+  private invalidateSource(parent: HTMLElement, element: HTMLElement, state: SourceState): void {
+    const states = this.sourceStates.get(parent);
+    if (states?.get(element) !== state) return;
+    states.delete(element);
+    this.translatedElements.delete(element);
+    if (element.isConnected && (parent === element || parent.contains(element))) clearTranslationView(element);
+    this.requeueChanged(parent);
+  }
+
+  private reconcileMessage(parent: HTMLElement): void {
+    if (!this.active || !parent.isConnected) return;
+    const states = this.sourceStates.get(parent);
+    if (!states) return;
+    let changed = false;
+    for (const [element, state] of states) {
+      if (this.stateCurrent(parent, element, state)) continue;
+      states.delete(element);
+      this.translatedElements.delete(element);
+      if (element.isConnected && (parent === element || parent.contains(element))) clearTranslationView(element);
+      changed = true;
+    }
+    // Late embed bodies and React replacements can introduce a new source
+    // element without replacing the message container.
+    if (!changed && this.translatedMessages.has(parent)) {
+      changed = findAllTranslatableElements(parent).some(item => !states.has(item.element));
+    }
+    if (changed) this.requeueChanged(parent);
+  }
+
+  private reobserve(parent: HTMLElement): void {
+    if (!this.active || !parent.isConnected || !this.observedMessages.has(parent)) return;
+    this.intersectionObserver.unobserve(parent);
+    this.intersectionObserver.observe(parent);
+  }
+
+  private requeueChanged(parent: HTMLElement): void {
+    this.translatedMessages.delete(parent);
+    if (this.inFlightMessages.has(parent)) {
+      this.reobserveAfterJob.add(parent);
+      for (const job of this.jobs) {
+        if (job.messages.some(([element]) => element === parent)) job.invalidated.add(parent);
+      }
+      this.cancelObsoleteJobs();
+    } else this.reobserve(parent);
+  }
+
+  private cancelObsoleteJobs(): void {
+    const path = location.pathname;
+    for (const job of this.jobs) {
+      if (job.controller.signal.aborted) continue;
+      if (job.path !== path || !job.messages.some(([element]) =>
+          element.isConnected && !job.invalidated.has(element))) job.controller.abort();
+    }
+  }
+
+  /** Called by the existing storage-change event, only for request settings. */
+  cancelOutstanding(): void {
+    this.requestEpoch++;
+    for (const job of this.jobs) {
+      for (const [element] of job.messages) {
+        if (element.isConnected && !this.translatedMessages.has(element)) this.reobserveAfterJob.add(element);
+      }
+      job.controller.abort();
+    }
+  }
+
+  private enqueueJob(messages: Array<[HTMLElement, string]>, settings: Awaited<ReturnType<typeof getSettings>>, batch: boolean): void {
+    const job: TranslationJob = { controller: new AbortController(), path: location.pathname, messages, invalidated: new Set() };
+    const signal = job.controller.signal;
+    for (const [element] of messages) this.inFlightMessages.add(element);
+    this.jobs.add(job);
+    void this.translationQueue.add(async () => {
+      if (!this.active || signal.aborted || job.path !== location.pathname) return;
+      const live = messages.filter(([element]) => element.isConnected && !job.invalidated.has(element));
+      if (!live.length) return;
+      try {
+        if (batch) await this.handleVisibleMessagesBatch(live, settings, signal);
+        else await this.handleVisibleMessage(live[0]![0], settings, signal);
+      } catch (error) {
+        if (!signal.aborted) throw error;
+      }
+    }).catch(error => {
+      if (!signal.aborted) console.error('[MessageObserver] Translation job failed:', error);
+    }).finally(() => {
+      this.jobs.delete(job);
+      for (const [element] of messages) {
+        this.inFlightMessages.delete(element);
+        if (this.reobserveAfterJob.has(element)) {
+          this.reobserveAfterJob.delete(element);
+          if (job.path === location.pathname) this.reobserve(element);
+        }
+      }
     });
   }
 
@@ -180,6 +331,7 @@ export class MessageTranslationObserver {
     this.mutationObserver.observe(document.body, {
       childList: true,
       subtree: true,
+      characterData: true,
     });
 
     console.log(`[MessageObserver] Observing ${uniqueMessages.size} existing messages`);
@@ -237,7 +389,12 @@ export class MessageTranslationObserver {
       return;
     }
 
+    const epoch = this.requestEpoch;
     const settings = await getSettings();
+    if (!this.active || epoch !== this.requestEpoch) {
+      if (this.active && this.pendingMessages.size) this.processPendingDebounced();
+      return;
+    }
     if (!settings.autoTranslate) {
       this.pendingMessages.clear();
       return;
@@ -246,6 +403,10 @@ export class MessageTranslationObserver {
     // Initialize language detector if skipTargetLanguage is enabled
     if (settings.skipTargetLanguage) {
       await this.initLanguageDetector();
+    }
+    if (!this.active || epoch !== this.requestEpoch) {
+      if (this.active && this.pendingMessages.size) this.processPendingDebounced();
+      return;
     }
 
     // Get all pending messages
@@ -271,25 +432,8 @@ export class MessageTranslationObserver {
     const batch = settings.translationProvider === 'openai' ||
       filteredMessages.length >= BATCH_SIZE ||
       (filteredMessages.length > 1 && (remote || paired));
-    if (batch) {
-      for (const [element] of filteredMessages) this.inFlightMessages.add(element);
-      this.translationQueue.add(async () => {
-        if (this.active) await this.handleVisibleMessagesBatch(filteredMessages, settings);
-      }).catch((error) => {
-        console.error('[MessageObserver] Batch translation failed:', error);
-      }).finally(() => {
-        for (const [element] of filteredMessages) this.inFlightMessages.delete(element);
-      });
-    } else {
-      for (const [element, messageId] of filteredMessages) {
-        this.inFlightMessages.add(element);
-        this.translationQueue.add(async () => {
-          if (this.active) await this.handleVisibleMessage(element, settings);
-        }).catch((error) => {
-          console.error(`[MessageObserver] Translation failed for message ${messageId}:`, error);
-        }).finally(() => this.inFlightMessages.delete(element));
-      }
-    }
+    if (batch) this.enqueueJob(filteredMessages, settings, true);
+    else for (const pair of filteredMessages) this.enqueueJob([pair], settings, false);
     this.scheduleSurfaceWork();
   }
 
@@ -313,7 +457,8 @@ export class MessageTranslationObserver {
    */
   private async handleVisibleMessagesBatch(
     messagePairs: Array<[HTMLElement, string]>,
-    settings: Awaited<ReturnType<typeof getSettings>>
+    settings: Awaited<ReturnType<typeof getSettings>>,
+    signal: AbortSignal,
   ) {
     // Collect all translatable elements from all message containers.
     // Each plan is either "simple" (single text blob, existing flow) or
@@ -325,6 +470,7 @@ export class MessageTranslationObserver {
       element: HTMLElement;
       parent: HTMLElement;
       type: 'message-content' | 'embed-section';
+      state: SourceState;
     };
     type StructuredPlan = {
       kind: 'structured';
@@ -334,6 +480,7 @@ export class MessageTranslationObserver {
       embed: boolean;
       bilingual?: BilingualLayout;
       groupId: string;
+      state: SourceState;
     };
     const plans: Array<SimplePlan | StructuredPlan> = [];
 
@@ -350,7 +497,10 @@ export class MessageTranslationObserver {
           continue;
         }
 
-        const text = item.element.textContent?.trim() || '';
+        signal.throwIfAborted();
+        const state = this.captureSource(container, item.element);
+        if (state.views.length) { this.translatedElements.add(item.element); continue; }
+        const text = state.source.trim();
 
         if (!text) {
           continue;
@@ -364,23 +514,29 @@ export class MessageTranslationObserver {
             settings.targetLanguage,
             LANGUAGE_DETECTION_MIN_CONFIDENCE
           );
+          signal.throwIfAborted();
+          if (!this.stateCurrent(container, item.element, state)) {
+            this.invalidateSource(container, item.element, state);
+            continue;
+          }
           if (shouldSkip) {
-            // Mark as translated (skipped) to avoid reprocessing
             this.translatedElements.add(item.element);
             continue;
           }
         }
 
-        const plan = this.buildTranslationPlan(item, container, text, settings);
+        const plan = this.buildTranslationPlan(item, container, text, settings, state);
         if (plan) {
           plans.push(plan);
         }
       }
     }
 
+    signal.throwIfAborted();
     if (plans.length === 0) {
       // Mark parent messages as processed even if all elements were skipped
       for (const [container] of messagePairs) {
+        if (this.reobserveAfterJob.has(container) || !container.isConnected) continue;
         this.translatedMessages.add(container);
         this.intersectionObserver.unobserve(container);
       }
@@ -396,6 +552,10 @@ export class MessageTranslationObserver {
         }
       };
       for (const plan of plans) {
+        if (!this.stateCurrent(plan.parent, plan.element, plan.state)) {
+          this.invalidateSource(plan.parent, plan.element, plan.state);
+          continue;
+        }
         if (plan.kind === 'simple') {
           pushUnique(plan.contentId, plan.content);
         } else {
@@ -405,22 +565,31 @@ export class MessageTranslationObserver {
         }
       }
 
+      signal.throwIfAborted();
+      if (!uniqueContents.size) return;
       const translations = await translateMessageBatch(
         Array.from(uniqueContents.values()),
-        settings.targetLanguage
+        settings.targetLanguage, signal, settings,
       );
+      signal.throwIfAborted();
+      this.cancelObsoleteJobs();
+      signal.throwIfAborted();
 
       // Inject translations into all elements
       const translatedParents = new Set<HTMLElement>();
       const incompleteEmbeds = new Set<HTMLElement>();
 
       for (const plan of plans) {
-        if (!this.active || !plan.element.isConnected) continue;
+        if (!this.active || !this.stateCurrent(plan.parent, plan.element, plan.state)) {
+          this.invalidateSource(plan.parent, plan.element, plan.state);
+          incompleteEmbeds.add(plan.parent);
+          continue;
+        }
         if (plan.kind === 'simple') {
           const translation = translations.get(plan.contentId);
           if (!translation || translation === plan.content) {
             if (settings.translationProvider === 'openai') {
-              this.translatedElements.add(plan.element);
+              this.markElement(plan.parent, plan.element, plan.state);
               translatedParents.add(plan.parent);
             } else if (plan.type === 'embed-section') incompleteEmbeds.add(plan.parent);
             continue;
@@ -430,13 +599,13 @@ export class MessageTranslationObserver {
           } else {
             this.injectTranslationToElement(plan.element, translation, settings.translationMode);
           }
-          this.translatedElements.add(plan.element);
+          this.markElement(plan.parent, plan.element, plan.state);
           translatedParents.add(plan.parent);
         } else {
           const translatedBlocks = plan.entries.map((entry) => resolveBlock(entry, translations, true));
           if (!translatedBlocks.some(({ block, translation }) => translation !== block.text)) {
             if (settings.translationProvider === 'openai') {
-              this.translatedElements.add(plan.element);
+              this.markElement(plan.parent, plan.element, plan.state);
               translatedParents.add(plan.parent);
             } else if (plan.embed) incompleteEmbeds.add(plan.parent);
             continue;
@@ -447,7 +616,7 @@ export class MessageTranslationObserver {
                   plan.element.textContent === plan.bilingual.source) {
                 // A missing pair must not trigger another paid request while
                 // this same message remains mounted.
-                this.translatedElements.add(plan.element);
+                this.markElement(plan.parent, plan.element, plan.state);
                 translatedParents.add(plan.parent);
               } else incompleteEmbeds.add(plan.parent);
               continue;
@@ -460,20 +629,21 @@ export class MessageTranslationObserver {
               plan.embed
             );
           }
-          this.translatedElements.add(plan.element);
+          this.markElement(plan.parent, plan.element, plan.state);
           translatedParents.add(plan.parent);
         }
       }
 
       // Mark parent messages as translated
       for (const container of translatedParents) {
-        if (incompleteEmbeds.has(container)) continue;
+        if (incompleteEmbeds.has(container) || this.reobserveAfterJob.has(container)) continue;
         this.translatedMessages.add(container);
         this.intersectionObserver.unobserve(container);
       }
 
       console.log(`[MessageObserver] Batch translated ${plans.length} elements from ${translatedParents.size} messages`);
     } catch (error) {
+      if (signal.aborted) return;
       console.error('[MessageObserver] Batch translation failed:', error);
       throw error;
     }
@@ -491,10 +661,11 @@ export class MessageTranslationObserver {
     item: TranslatableElement,
     parent: HTMLElement,
     fallbackText: string,
-    settings: Awaited<ReturnType<typeof getSettings>>
+    settings: Awaited<ReturnType<typeof getSettings>>,
+    state: SourceState,
   ):
-    | { kind: 'simple'; contentId: string; content: string; element: HTMLElement; parent: HTMLElement; type: 'message-content' | 'embed-section' }
-    | { kind: 'structured'; element: HTMLElement; parent: HTMLElement; entries: BlockEntry[]; embed: boolean; bilingual?: BilingualLayout; groupId: string }
+    | { kind: 'simple'; contentId: string; content: string; element: HTMLElement; parent: HTMLElement; type: 'message-content' | 'embed-section'; state: SourceState }
+    | { kind: 'structured'; element: HTMLElement; parent: HTMLElement; entries: BlockEntry[]; embed: boolean; bilingual?: BilingualLayout; groupId: string; state: SourceState }
     | null {
     const isReplyContext = item.element.closest('[id^="message-reply-context-"]') !== null;
 
@@ -513,14 +684,14 @@ export class MessageTranslationObserver {
         // full-message modes, sharing the same cache key as the paired modes.
         if (onePlain && (granularity === 'message' || granularity === 'replace') &&
             !item.element.querySelector('h1,h2,h3,h4,h5,h6,p,ul,ol,pre,blockquote,br')) {
-          return { kind: 'simple', contentId: item.id, content: fallbackText, element: item.element, parent, type: item.type };
+          return { kind: 'simple', contentId: item.id, content: fallbackText, element: item.element, parent, type: item.type, state };
         }
         const entries = bilingual.units.map(({ block, send }, index) => ({
           block,
           id: onePlain ? item.id : bilingualUnitId(item.id, block.text, index, bilingual.fingerprint),
           send,
         }));
-        return { kind: 'structured', element: item.element, parent, entries, embed, bilingual, groupId: getTranslatableElementKey(item) };
+        return { kind: 'structured', element: item.element, parent, entries, embed, bilingual, groupId: getTranslatableElementKey(item), state };
       }
       // Very fragmented messages use the same bounded block fallback in every mode.
       const blocks = extractBlocks(item.element, true);
@@ -541,6 +712,7 @@ export class MessageTranslationObserver {
           entries,
           embed,
           groupId: getTranslatableElementKey(item),
+          state,
         };
       }
     }
@@ -552,6 +724,7 @@ export class MessageTranslationObserver {
       element: item.element,
       parent,
       type: item.type,
+      state,
     };
   }
 
@@ -561,7 +734,8 @@ export class MessageTranslationObserver {
    */
   private async handleVisibleMessage(
     element: HTMLElement,
-    settings: Awaited<ReturnType<typeof getSettings>>
+    settings: Awaited<ReturnType<typeof getSettings>>,
+    signal: AbortSignal,
   ) {
     if (!this.active || !element.isConnected || this.translatedMessages.has(element)) return;
 
@@ -584,7 +758,10 @@ export class MessageTranslationObserver {
         continue;
       }
 
-      const text = item.element.textContent?.trim() || '';
+      signal.throwIfAborted();
+      const state = this.captureSource(element, item.element);
+      if (state.views.length) { this.translatedElements.add(item.element); continue; }
+      const text = state.source.trim();
 
       if (!text) {
         continue;
@@ -598,14 +775,19 @@ export class MessageTranslationObserver {
           settings.targetLanguage,
           LANGUAGE_DETECTION_MIN_CONFIDENCE
         );
+        signal.throwIfAborted();
+        if (!this.stateCurrent(element, item.element, state)) {
+          this.invalidateSource(element, item.element, state);
+          incompleteEmbed = true;
+          continue;
+        }
         if (shouldSkip) {
-          // Mark as translated (skipped) to avoid reprocessing
           this.translatedElements.add(item.element);
           continue;
         }
       }
 
-      const plan = this.buildTranslationPlan(item, element, text, settings);
+      const plan = this.buildTranslationPlan(item, element, text, settings, state);
       if (!plan) {
         continue;
       }
@@ -615,8 +797,15 @@ export class MessageTranslationObserver {
           const translation = await translateMessage(
             plan.contentId,
             plan.content,
-            settings.targetLanguage
+            settings.targetLanguage, signal, settings,
           );
+          this.cancelObsoleteJobs();
+          signal.throwIfAborted();
+          if (!this.stateCurrent(element, item.element, state)) {
+            this.invalidateSource(element, item.element, state);
+            incompleteEmbed = true;
+            continue;
+          }
           if (!translation || translation === plan.content) {
             if (plan.type === 'embed-section') incompleteEmbed = true;
             continue;
@@ -629,8 +818,15 @@ export class MessageTranslationObserver {
         } else {
           const blockTranslations = await translateMessageBatch(
             plan.entries.filter(({ send }) => send).map(({ id, block }) => ({ id, content: block.text, groupId: plan.groupId })),
-            settings.targetLanguage
+            settings.targetLanguage, signal, settings,
           );
+          this.cancelObsoleteJobs();
+          signal.throwIfAborted();
+          if (!this.stateCurrent(element, item.element, state)) {
+            this.invalidateSource(element, item.element, state);
+            incompleteEmbed = true;
+            continue;
+          }
           const translatedBlocks = plan.entries.map((entry) => resolveBlock(entry, blockTranslations, true));
           if (!translatedBlocks.some(({ block, translation }) => translation !== block.text)) {
             if (plan.embed) incompleteEmbed = true;
@@ -650,9 +846,10 @@ export class MessageTranslationObserver {
             );
           }
         }
-        this.translatedElements.add(item.element);
+        this.markElement(element, item.element, state);
         translatedAny = true;
       } catch (error) {
+        if (signal.aborted) return;
         console.error(`[MessageObserver] Translation failed for element ${elementKey}:`, error);
         if (item.type === 'embed-section') {
           incompleteEmbed = true;
@@ -663,7 +860,7 @@ export class MessageTranslationObserver {
     }
 
     // Mark main message as translated
-    if (translatedAny && !incompleteEmbed) {
+    if (translatedAny && !incompleteEmbed && !this.reobserveAfterJob.has(element)) {
       this.translatedMessages.add(element);
       this.intersectionObserver.unobserve(element);
     }
@@ -788,6 +985,11 @@ export class MessageTranslationObserver {
   stop() {
     console.log('[MessageObserver] Stopping...');
     this.active = false;
+    this.requestEpoch++;
+    for (const job of this.jobs) job.controller.abort();
+    this.jobs.clear();
+    this.inFlightMessages = new WeakSet();
+    this.reobserveAfterJob = new WeakSet();
     this.surfaceSettingsRevision++;
     this.surfaces.clear();
     this.intersectionObserver.disconnect();

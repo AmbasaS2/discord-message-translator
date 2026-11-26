@@ -44,6 +44,8 @@ export default defineContentScript({
         'targetLanguage', 'translationProvider', 'activeOpenaiPresetId', 'openaiPresets',
         'apiKeys', 'skipTargetLanguage'
       ].some((key) => key in changes)) {
+        if (['targetLanguage', 'translationProvider', 'activeOpenaiPresetId', 'openaiPresets', 'apiKeys', 'skipTargetLanguage']
+          .some(key => key in changes)) observer?.cancelOutstanding();
         void observer?.refreshSurfaceSettings();
       }
       if (area === 'local' && changes.autoTranslate) {
