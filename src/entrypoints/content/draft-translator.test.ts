@@ -44,16 +44,19 @@ describe('draft composer UI', () => {
     expect(panel).not.toBeNull();
     expect(panel.hidden).toBe(true);
     expect(editor.querySelector('.basa-draft-tools')).toBeNull();
+    editor.dispatchEvent(new Event('beforeinput', { bubbles: true }));
+    expect(panel.hidden).toBe(true);
     editor.textContent = '안녕하세요';
-    editor.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     expect(panel.hidden).toBe(false);
     const globe = panel.querySelector<HTMLButtonElement>('[aria-label="basa_translateDraft"]')!;
     expect(globe.hidden).toBe(false);
     expect(globe.querySelector('svg path')).not.toBeNull();
     editor.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
     expect(composer.querySelectorAll('.basa-draft-tools')).toHaveLength(1);
+    editor.dispatchEvent(new Event('beforeinput', { bubbles: true }));
     editor.textContent = '';
-    editor.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     expect(panel.hidden).toBe(true);
   });
 

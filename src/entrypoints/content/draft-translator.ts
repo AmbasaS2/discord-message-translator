@@ -21,19 +21,37 @@ export function isRichDraft(editor: HTMLElement): boolean {
   return Boolean(editor.querySelector('[contenteditable="false"]:not([data-slate-placeholder]), [data-slate-void="true"], a[href], img'));
 }
 
-// Text replacement goes through the browser's editing pipeline, not direct Slate DOM mutation.
-function replaceDraft(editor: HTMLElement, value: string): boolean {
+// Let Slate commit the edit so its model and rendered text stay in sync.
+async function replaceDraft(editor: HTMLElement, value: string): Promise<boolean> {
   if (!editor.isConnected) return false;
   editor.focus();
   if (document.activeElement !== editor && !editor.contains(document.activeElement)) return false;
   const selection = window.getSelection();
   if (!selection) return false;
-  const range = document.createRange();
-  range.selectNodeContents(editor);
-  selection.removeAllRanges();
-  selection.addRange(range);
-  const inserted = document.execCommand('insertText', false, value);
-  return inserted && readDraft(editor) === value.trim();
+  const leaves = editor.querySelectorAll('[data-slate-string], [data-slate-zero-width]');
+  const first = leaves[0]?.firstChild;
+  const last = leaves[leaves.length - 1]?.lastChild;
+  if (!(first instanceof Text) || !(last instanceof Text)) return false;
+  const original = readDraft(editor);
+  selection.setBaseAndExtent(first, 0, last, last.length);
+  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+  if (!editor.isConnected || document.activeElement !== editor || readDraft(editor) !== original ||
+      selection.anchorNode !== first || selection.anchorOffset !== 0 ||
+      selection.focusNode !== last || selection.focusOffset !== last.length) return false;
+  editor.dispatchEvent(new InputEvent('beforeinput', {
+    bubbles: true,
+    cancelable: true,
+    inputType: 'insertReplacementText',
+    data: value,
+    targetRanges: [new StaticRange({
+      startContainer: first,
+      startOffset: 0,
+      endContainer: last,
+      endOffset: last.length,
+    })],
+  }));
+  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+  return editor.isConnected && readDraft(editor) === value.trim();
 }
 
 function makeButton(key: string, icon: DraftIcon): HTMLButtonElement {
@@ -133,6 +151,8 @@ export class DraftTranslator {
     let result = '';
     let applied = false;
     let writing = false;
+    let inputFrame: number | undefined;
+    let pasteTimer: number | undefined;
 
     const setHidden = (element: HTMLElement, hidden: boolean) => {
       if (element.hidden !== hidden) element.hidden = hidden;
@@ -141,34 +161,51 @@ export class DraftTranslator {
       const hasText = hasDraftText(editor);
       setHidden(translate, !hasText || applied);
       setHidden(restore, !hasText || !applied);
-      setHidden(copy, !result || (!applied && preview.hidden));
-      setHidden(panel, translate.hidden && restore.hidden && copy.hidden);
+      setHidden(copy, !result || (!applied && Boolean(preview.hidden)));
+      setHidden(panel, Boolean(translate.hidden && restore.hidden && copy.hidden));
     };
     const setStatus = (key: string, visible = false) => {
       const message = key ? t(key) : '';
       if (status.textContent !== message) status.textContent = message;
-      feedback.classList.toggle('basa-draft-feedback--quiet', !visible && preview.hidden);
+      feedback.classList.toggle('basa-draft-feedback--quiet', !visible && Boolean(preview.hidden));
       status.classList.toggle('basa-draft-status--quiet', !visible);
     };
-    const writeDraft = (value: string) => {
+    const writeDraft = async (value: string) => {
       writing = true;
-      try { return replaceDraft(editor, value); }
+      try { return await replaceDraft(editor, value); }
       finally { writing = false; }
     };
     const onInput = () => {
-      if (writing || this.editor !== editor) return;
-      // Changes invalidate a completed result, but never interrupt an active request.
-      if (!this.busy && (result || applied || status.textContent || !preview.hidden)) {
-        original = '';
-        result = '';
-        applied = false;
-        preview.hidden = true;
-        setStatus('');
-      }
-      updateVisibility();
+      if (writing || this.editor !== editor || inputFrame !== undefined) return;
+      // Slate may handle beforeinput itself and never emit a native input event.
+      inputFrame = window.requestAnimationFrame(() => {
+        inputFrame = undefined;
+        if (!editor.isConnected || this.editor !== editor) return;
+        // Changes invalidate a completed result, but never interrupt an active request.
+        if (!this.busy && (result || applied || status.textContent || !preview.hidden)) {
+          original = '';
+          result = '';
+          applied = false;
+          preview.hidden = true;
+          setStatus('');
+        }
+        updateVisibility();
+      });
     };
-    editor.addEventListener('input', onInput);
-    this.removeInputListener = () => editor.removeEventListener('input', onInput);
+    editor.addEventListener('beforeinput', onInput, true);
+    const onPaste = (event: ClipboardEvent) => {
+      if (!(event.target instanceof Node) || !editor.contains(event.target)) return;
+      // Discord can consume the paste and commit text after its clipboard handler finishes.
+      window.clearTimeout(pasteTimer);
+      pasteTimer = window.setTimeout(onInput, 60);
+    };
+    window.addEventListener('paste', onPaste, true);
+    this.removeInputListener = () => {
+      editor.removeEventListener('beforeinput', onInput, true);
+      window.removeEventListener('paste', onPaste, true);
+      window.clearTimeout(pasteTimer);
+      if (inputFrame !== undefined) window.cancelAnimationFrame(inputFrame);
+    };
     updateVisibility();
 
     translate.addEventListener('click', async () => {
@@ -208,7 +245,8 @@ export class DraftTranslator {
         preview.value = result;
         // Rich Slate nodes and edits made during the request must remain intact.
         const unchanged = readDraft(editor) === snapshot;
-        applied = unchanged && !isRichDraft(editor) && writeDraft(result);
+        applied = unchanged && !isRichDraft(editor) && await writeDraft(result);
+        if (!isCurrent()) return;
         preview.hidden = applied;
         setStatus(applied ? 'basa_draftReady' : 'basa_draftPreview', !applied);
         updateVisibility();
@@ -224,12 +262,14 @@ export class DraftTranslator {
       }
     });
 
-    restore.addEventListener('click', () => {
-      if (!applied || this.editor !== editor || readDraft(editor) !== result.trim() || isRichDraft(editor)) {
+    restore.addEventListener('click', async () => {
+      if (writing || !applied || this.editor !== editor || readDraft(editor) !== result.trim() || isRichDraft(editor)) {
         setStatus('basa_restoreBlocked', true);
         return;
       }
-      if (writeDraft(original)) {
+      const restored = await writeDraft(original);
+      if (this.editor !== editor || !editor.isConnected) return;
+      if (restored) {
         applied = false;
         original = '';
         result = '';
