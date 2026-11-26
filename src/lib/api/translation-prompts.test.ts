@@ -25,7 +25,7 @@ describe('translation request prompts', () => {
   });
 
   it('can omit detailed draft style without removing the mandatory contract or affecting incoming translations', () => {
-    const style = 'Keep the user's voice.';
+    const style = "Keep the user's voice.";
     const off = buildTranslationSystemPrompt('English', 'draft', 'single', style, false);
     expect(off).not.toContain(style);
     expect(off).not.toContain(DEFAULT_DRAFT_TRANSLATION_PROMPT);
