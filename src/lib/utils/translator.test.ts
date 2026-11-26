@@ -74,7 +74,7 @@ describe('Translator Utilities', () => {
   });
 
   it('bulk reads and saves successful grouped units without caching a missing AI result', async () => {
-    const existing = { translations: { ko: '첫째' }, timestamp: Date.now() };
+    const existing = { source: 'First.', translations: { ko: '첫째' }, timestamp: Date.now() };
     mockStorage.getMany = vi.fn().mockResolvedValueOnce(new Map([['a', existing]])).mockResolvedValueOnce(new Map());
     mockStorage.setMany = vi.fn().mockResolvedValue(undefined);
     const batch = vi.fn().mockResolvedValue(['둘째', '']);
@@ -109,6 +109,7 @@ describe('Translator Utilities', () => {
     it('should return cached translation if available', async () => {
       const messageId = 'msg-123';
       const cachedEntry = {
+        source: 'Hello',
         translations: {
           ja: 'こんにちは',
         },
@@ -125,6 +126,25 @@ describe('Translator Utilities', () => {
 
       expect(result).toBe('こんにちは');
       expect(mockTranslate).not.toHaveBeenCalled();
+    });
+
+    it.each([undefined, 'Old text.'])('does not reuse an unverified or edited source (%s)', async source => {
+      mockStorage.get.mockResolvedValue({ source, translations: { ko: '이전 번역' }, timestamp: Date.now() });
+      mockTranslate.mockResolvedValue('새 문장.');
+      vi.mocked(getSettings).mockResolvedValue({ translationProvider: 'google', apiKeys: { google: 'key' } } as any);
+      expect(await translateMessage('same-id', 'New text.', 'ko')).toBe('새 문장.');
+      expect(mockTranslate).toHaveBeenCalledWith('New text.', 'ko');
+      expect(mockStorage.set).toHaveBeenCalledWith('same-id', expect.objectContaining({
+        source: 'New text.', translations: { ko: '새 문장.' },
+      }));
+    });
+
+    it('does not persist a broken placeholder result', async () => {
+      mockStorage.get.mockResolvedValue(null);
+      mockTranslate.mockResolvedValue('링크를 읽어.');
+      vi.mocked(getSettings).mockResolvedValue({ translationProvider: 'google', apiKeys: { google: 'key' } } as any);
+      expect(await translateMessage('link', 'Read §P0§.', 'ko')).toBe('Read §P0§.');
+      expect(mockStorage.set).not.toHaveBeenCalled();
     });
 
     it('should call Google API and cache result when no cache exists', async () => {
@@ -255,6 +275,7 @@ describe('Translator Utilities', () => {
     it('should merge new translation with existing cache', async () => {
       const messageId = 'msg-999';
       const existingCache = {
+        source: 'Hello',
         translations: {
           ja: 'こんにちは',
         },

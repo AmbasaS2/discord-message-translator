@@ -4,6 +4,7 @@ import type { ITranslationStorage } from '@/lib/cache/types';
 import { createTranslationClient } from '@/lib/api/factory';
 import type { TranslationCacheEntry } from '@/types/cache';
 import { getSettings } from './settings';
+import { validateTranslation } from './translation-validation';
 
 export async function translateMessage(
   messageId: string,
@@ -14,7 +15,7 @@ export async function translateMessage(
 
   // Check cache
   const cached = await storage.get(messageId);
-  const hit = cached?.translations[targetLang];
+  const hit = cached?.source === text ? validateTranslation(text, cached.translations[targetLang], targetLang) : null;
   if (hit) {
     console.log(`[Translator] Cache hit for message ${messageId}`);
     return hit;
@@ -25,7 +26,8 @@ export async function translateMessage(
   const client = createTranslationClient(settings);
 
   // Call API
-  const translation = await client.translate(text, targetLang);
+  const translation = validateTranslation(text, await client.translate(text, targetLang), targetLang);
+  if (translation === null) return text;
 
   // chrome-builtin returns the original text when it cannot translate (unsupported
   // pair, missing language pack, etc). Caching that would pin the message as
@@ -35,9 +37,11 @@ export async function translateMessage(
   }
 
   // Save to cache
+  const latest = await storage.get(messageId);
   const entry: TranslationCacheEntry = {
+    source: text,
     translations: {
-      ...(cached?.translations || {}),
+      ...(latest?.source === text ? latest.translations : {}),
       [targetLang]: translation,
     },
     timestamp: Date.now(),
@@ -74,7 +78,9 @@ export async function translateMessageBatch(
   const uncachedTexts: string[] = [];
 
   for (const message of messages) {
-    const hit = cachedEntries.get(message.id)?.translations[targetLang];
+    const cached = cachedEntries.get(message.id);
+    const hit = cached?.source === message.content
+      ? validateTranslation(message.content, cached.translations[targetLang], targetLang) : null;
     if (hit) results.set(message.id, hit);
     else {
       uncachedMessages.push(message);
@@ -119,14 +125,15 @@ export async function translateMessageBatch(
     throw new Error('[Translator] translateBatch returned a mismatched number of results');
   }
 
-  const cacheable = new Map<string, string>();
+  const cacheable = new Map<string, { source: string; translation: string }>();
   for (let i = 0; i < uncachedMessages.length; i++) {
     const message = uncachedMessages[i];
-    const translation = translations[i];
-    if (message === undefined || !translation?.trim()) continue;
+    if (message === undefined) continue;
+    const translation = validateTranslation(message.content, translations[i], targetLang);
+    if (translation === null) continue;
     results.set(message.id, translation);
     if (settings.translationProvider === 'chrome-builtin' && translation === message.content) continue;
-    cacheable.set(message.id, translation);
+    cacheable.set(message.id, { source: message.content, translation });
   }
 
   if (cacheable.size) {
@@ -135,9 +142,11 @@ export async function translateMessageBatch(
     const latest = await readCachedEntries(storage, [...cacheable.keys()]);
     const entries = new Map<string, TranslationCacheEntry>();
     const timestamp = Date.now();
-    for (const [id, translation] of cacheable) {
+    for (const [id, { source, translation }] of cacheable) {
+      const prior = latest.get(id);
       entries.set(id, {
-        translations: { ...latest.get(id)?.translations, [targetLang]: translation },
+        source,
+        translations: { ...(prior?.source === source ? prior.translations : {}), [targetLang]: translation },
         timestamp,
       });
     }

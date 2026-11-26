@@ -1,5 +1,6 @@
 import { createTranslationClient } from '@/lib/api/factory';
 import type { Settings } from '@/types/settings';
+import { validateTranslation } from '@/lib/utils/translation-validation';
 
 const NAV = '#channels [class*="name_"], [data-list-item-id^="channels___"] [class*="name_"], [data-list-id*="channels"] [class*="name_"]';
 const FORUM = '[class*="mainCard"] h3, [class*="mainCard"] [class*="postTitleText"], [class*="mainCard"] [class*="postBody"], [class*="mainCard"] [class*="threadTitle"], [class*="titleWrapper"] h1, section[class*="title"][class*="container"] [class*="topic"]';
@@ -161,7 +162,7 @@ export class SurfaceTranslator {
       const translated = await client.translateBatch(entries.map(([, text]) => text), settings.targetLanguage);
       if (epoch !== this.epoch) return;
       entries.forEach(([key, source], index) => {
-        const result = translated[index]?.trim();
+        const result = validateTranslation(source, translated[index], settings.targetLanguage);
         if (!result) return;
         results.set(key, result);
         if (result !== source) this.remember(key, result);
