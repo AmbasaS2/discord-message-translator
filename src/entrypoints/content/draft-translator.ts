@@ -227,12 +227,16 @@ export class DraftTranslator {
         const settings = await getSettings();
         if (!settings.draftEnabled || !isCurrent()) return;
         const provider = settings.draftProvider === 'inherit' ? settings.translationProvider : settings.draftProvider;
+        if (settings.draftProvider === 'openai' && settings.draftOpenaiPresetId &&
+            !settings.openaiPresets.some((preset) => preset.id === settings.draftOpenaiPresetId)) {
+          throw new Error('The selected draft AI connection no longer exists');
+        }
         const client = createTranslationClient({
           ...settings,
           translationProvider: provider,
           activeOpenaiPresetId: settings.draftOpenaiPresetId && settings.draftProvider === 'openai'
             ? settings.draftOpenaiPresetId : settings.activeOpenaiPresetId,
-        });
+        }, 'draft');
         const source = provider === 'chrome-builtin' && /[가-힣]/.test(snapshot) ? 'ko' : undefined;
         const translated = await client.translate(snapshot, settings.draftTargetLanguage, source);
         if (!isCurrent()) return;

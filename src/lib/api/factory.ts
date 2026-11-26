@@ -5,6 +5,7 @@ import { DeepLClient } from './deepl';
 import { OpenAICompatibleClient } from './openai-compatible';
 import { requestCompletionViaBackground } from './openai-background';
 import { ChromeBuiltinTranslator } from './chrome-builtin';
+import type { TranslationPurpose } from './translation-prompts';
 
 export interface TranslationClient {
   translate(text: string, targetLang: string, sourceLang?: string): Promise<string>;
@@ -21,7 +22,7 @@ function getChromeBuiltinTranslator(): ChromeBuiltinTranslator {
   return chromeBuiltinInstance;
 }
 
-export function createTranslationClient(settings: Settings): TranslationClient {
+export function createTranslationClient(settings: Settings, purpose: TranslationPurpose = 'incoming'): TranslationClient {
   switch (settings.translationProvider) {
     case 'google':
       if (!settings.apiKeys.google) {
@@ -48,6 +49,7 @@ export function createTranslationClient(settings: Settings): TranslationClient {
         baseUrl: preset.baseUrl,
         model: preset.model,
         extraBody: preset.extraBody,
+        ...(purpose === 'draft' ? { purpose, draftPrompt: settings.draftTranslationPrompt } : {}),
       }, requestCompletionViaBackground);
     }
 
