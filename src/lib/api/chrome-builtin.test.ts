@@ -46,6 +46,7 @@ function stubTranslator(options?: {
 
 describe('ChromeBuiltinTranslator.translateBatch', () => {
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -82,23 +83,88 @@ describe('ChromeBuiltinTranslator.translateBatch', () => {
     expect(result).toEqual(['hello', '[fr->ja]bonjour']);
   });
 
-  it('returns originals without throwing when Translator.create rejects, and retries on the next call', async () => {
-    stubLanguageDetector(() => ({ detectedLanguage: 'en', confidence: 0.9 }));
-    const { create } = stubTranslator({
+  it('handles expected creation failures quietly, sharing the cooldown across concurrent requests', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    let ready = false;
+    const { create, availability } = stubTranslator({
       createImpl: async () => {
-        throw new Error('downloadable without user activation');
+        if (!ready) throw new DOMException('Model download requires user activation', 'NotAllowedError');
+        return { translate: async (text) => 'translated:' + text };
       },
     });
-
     const client = new ChromeBuiltinTranslator();
-    const result = await client.translateBatch(['hello'], 'ja');
-    expect(result).toEqual(['hello']);
+    expect(await Promise.all([
+      client.translateBatch(['a'], 'ko', 'ar'),
+      client.translateBatch(['b'], 'ko', 'ar'),
+    ])).toEqual([['a'], ['b']]);
+    expect(await client.translateBatch(['c'], 'ko', 'ar')).toEqual(['c']);
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(warn).not.toHaveBeenCalled();
+    expect(error).not.toHaveBeenCalled();
+    expect(debug).toHaveBeenCalledTimes(1);
+    expect(debug).toHaveBeenCalledWith(expect.stringContaining('ar-ko'), 'NotAllowedError', expect.any(String));
 
-    // The failed entry was evicted from the translator cache, so a later
-    // call retries Translator.create() instead of reusing the rejection.
-    const result2 = await client.translateBatch(['hello'], 'ja');
-    expect(result2).toEqual(['hello']);
+    ready = true;
+    clock.mockReturnValue(61_001);
+    expect(await client.translateBatch(['d'], 'ko', 'ar')).toEqual(['translated:d']);
     expect(create).toHaveBeenCalledTimes(2);
+    expect(availability).toHaveBeenCalled();
+  });
+
+  it('does not attempt a missing model download without user activation', async () => {
+    const activation = { isActive: false };
+    vi.stubGlobal('navigator', { userActivation: activation });
+    const { create } = stubTranslator({ availabilityOf: () => 'downloadable' });
+    const client = new ChromeBuiltinTranslator();
+    expect(await client.translateBatch(['a'], 'ko', 'ar')).toEqual(['a']);
+    expect(create).not.toHaveBeenCalled();
+    activation.isActive = true;
+    expect(await client.translateBatch(['a'], 'ko', 'ar')).toEqual(['[ar->ko]a']);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it('rechecks a previously unavailable language pair after the lazy cache expires', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    let ready = false;
+    const { create, availability } = stubTranslator({ availabilityOf: () => ready ? 'available' : 'unavailable' });
+    const client = new ChromeBuiltinTranslator();
+    expect(await client.translateBatch(['a'], 'ko', 'ar')).toEqual(['a']);
+    ready = true;
+    expect(await client.translateBatch(['b'], 'ko', 'ar')).toEqual(['b']);
+    expect(availability).toHaveBeenCalledTimes(1);
+    clock.mockReturnValue(61_001);
+    expect(await client.translateBatch(['c'], 'ko', 'ar')).toEqual(['[ar->ko]c']);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps unexpected implementation errors visible and limits immediate retries', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { create } = stubTranslator({ createImpl: async () => { throw new TypeError('unexpected'); } });
+    const client = new ChromeBuiltinTranslator();
+    expect(await client.translateBatch(['a'], 'ko', 'ar')).toEqual(['a']);
+    expect(await client.translateBatch(['b'], 'ko', 'ar')).toEqual(['b']);
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('ar-ko'), expect.any(TypeError));
+  });
+
+  it('preserves a failed text without blocking other texts in the same pair', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    stubTranslator({ createImpl: async () => ({
+      translate: async (text) => {
+        if (text === 'a') throw new DOMException('Cannot translate this text', 'UnknownError');
+        return 'translated:' + text;
+      },
+    }) });
+    const client = new ChromeBuiltinTranslator();
+    expect(await client.translateBatch(['a', 'b'], 'ko', 'en')).toEqual(['a', 'translated:b']);
+    expect(error).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+    expect(debug).toHaveBeenCalledTimes(1);
   });
 
   it('falls back to "en" when detection is "und"', async () => {

@@ -5,6 +5,25 @@ import { isSameLanguage } from '@/lib/utils/language';
 
 export type AvailabilityStatus = 'unavailable' | 'downloadable' | 'downloading' | 'available';
 
+const PAIR_RETRY_DELAY_MS = 60_000;
+const EXPECTED_BROWSER_FAILURES = new Set([
+  'NotAllowedError', 'NotSupportedError', 'AbortError', 'InvalidStateError',
+  'NotReadableError', 'UnknownError', 'OperationError', 'NetworkError', 'QuotaExceededError',
+]);
+
+function isExpectedBrowserFailure(error: unknown): error is DOMException {
+  return error instanceof DOMException && EXPECTED_BROWSER_FAILURES.has(error.name);
+}
+
+function reportBrowserFailure(context: string, error: unknown): void {
+  if (isExpectedBrowserFailure(error)) {
+    // Recoverable browser failures are diagnostic information, not extension errors.
+    console.debug(context, error.name, error.message);
+  } else {
+    console.error(context, error);
+  }
+}
+
 /**
  * Chrome Built-in Translator API client
  * Requires Chrome 138+ with Translator API enabled
@@ -14,15 +33,42 @@ export class ChromeBuiltinTranslator {
   // Stores the create() promise (not the resolved Translator) so concurrent
   // callers for the same pair share one Translator.create() call.
   private translatorCache: Map<string, Promise<Translator>> = new Map();
-  private availabilityCache: Map<string, AvailabilityStatus> = new Map();
+  private availabilityCache = new Map<string, { status: AvailabilityStatus; expiresAt: number }>();
+  private retryAfter = new Map<string, number>();
   // Memoized so concurrent detectSource() calls share one init attempt and a
   // failure is only logged once, instead of once per text in the batch.
   private detectorPromise: Promise<ChromeLanguageDetector | null> | null = null;
   // Set once a detect() call fails after a successful init, so later texts
   // skip the detector instead of hitting the same failure again.
   private detectorBroken = false;
-  // Pairs we already warned about, so a run of many messages logs once.
+  // Repeated failures of the same kind are diagnosed once per pair and phase.
   private warnedPairs: Set<string> = new Set();
+
+  private coolingDown(pairKey: string): boolean {
+    const until = this.retryAfter.get(pairKey);
+    if (until === undefined) return false;
+    if (Date.now() < until) return true;
+    this.retryAfter.delete(pairKey);
+    return false;
+  }
+
+  private recordFailure(pairKey: string, phase: 'availability' | 'create' | 'translate', error: unknown): void {
+    const name = error instanceof Error || error instanceof DOMException ? error.name : 'unknown';
+    const key = `${pairKey}:${phase}:${name}`;
+    if (!this.warnedPairs.has(key)) {
+      this.warnedPairs.add(key);
+      reportBrowserFailure(`[ChromeBuiltinTranslator] ${phase} failed for ${pairKey}:`, error);
+    }
+    // A rejected individual text (e.g. NotReadableError) need not affect
+    // other texts in the same language. Pair initialization failures do.
+    if (phase !== 'translate' ||
+        (isExpectedBrowserFailure(error) &&
+          ['NotAllowedError', 'NotSupportedError', 'InvalidStateError', 'AbortError'].includes(error.name))) {
+      this.retryAfter.set(pairKey, Date.now() + PAIR_RETRY_DELAY_MS);
+      this.availabilityCache.delete(pairKey);
+      this.translatorCache.delete(pairKey);
+    }
+  }
 
   /**
    * Check if the Chrome Translator API is available in the current browser
@@ -50,7 +96,7 @@ export class ChromeBuiltinTranslator {
       });
       return status as AvailabilityStatus;
     } catch (error) {
-      console.error('[ChromeBuiltinTranslator] Error checking language pair:', error);
+      reportBrowserFailure('[ChromeBuiltinTranslator] Error checking language pair:', error);
       return 'unavailable';
     }
   }
@@ -135,16 +181,15 @@ export class ChromeBuiltinTranslator {
       return cached;
     }
 
-    const created = Translator.create({
+    const created = (async () => Translator.create({
       sourceLanguage: normalizedSource,
       targetLanguage: normalizedTarget,
-    });
-    // Drop the failed attempt so a later call can retry instead of reusing a rejected promise.
-    // Only delete if this is still the entry we created: a concurrent retry may
-    // already have replaced it by the time this rejection is observed.
-    created.catch(() => {
+    }))();
+    // Set the cooldown before evicting the failed promise so concurrent
+    // callers cannot start another create() immediately after a rejection.
+    created.catch((error) => {
       if (this.translatorCache.get(cacheKey) === created) {
-        this.translatorCache.delete(cacheKey);
+        this.recordFailure(cacheKey, 'create', error);
       }
     });
     this.translatorCache.set(cacheKey, created);
@@ -152,14 +197,14 @@ export class ChromeBuiltinTranslator {
   }
 
   /**
-   * Check (and cache) availability for a normalized language pair, for the
-   * lifetime of this instance.
+   * Cache ready pairs and briefly cache other states so a missing model can
+   * become usable later without checking availability for every message.
    */
   private async getAvailability(normalizedSource: string, normalizedTarget: string): Promise<AvailabilityStatus> {
     const pairKey = `${normalizedSource}-${normalizedTarget}`;
     const cached = this.availabilityCache.get(pairKey);
-    if (cached) {
-      return cached;
+    if (cached && Date.now() < cached.expiresAt) {
+      return cached.status;
     }
 
     try {
@@ -167,11 +212,13 @@ export class ChromeBuiltinTranslator {
         sourceLanguage: normalizedSource,
         targetLanguage: normalizedTarget,
       })) as AvailabilityStatus;
-      this.availabilityCache.set(pairKey, status);
+      this.availabilityCache.set(pairKey, {
+        status,
+        expiresAt: status === 'available' ? Infinity : Date.now() + PAIR_RETRY_DELAY_MS,
+      });
       return status;
     } catch (error) {
-      console.error('[ChromeBuiltinTranslator] Error checking availability:', error);
-      // Don't cache a transient error as 'unavailable' forever; let a later call retry.
+      this.recordFailure(pairKey, 'availability', error);
       return 'unavailable';
     }
   }
@@ -198,20 +245,21 @@ export class ChromeBuiltinTranslator {
       }
     };
 
+    if (this.coolingDown(pairKey)) return;
     const availability = await this.getAvailability(normalizedSource, normalizedTarget);
-    if (availability === 'unavailable') {
-      fallbackToOriginals();
-      return;
-    }
+    if (availability === 'unavailable' || this.coolingDown(pairKey)) return;
+
+    // Model downloads require user activation. Do not provoke a rejection on
+    // automatic scrolling; a later active request may initiate the download.
+    if ((availability === 'downloadable' || availability === 'downloading') &&
+        !this.translatorCache.has(pairKey) &&
+        navigator.userActivation?.isActive === false) return;
 
     let translator: Translator;
     try {
       translator = await this.getTranslatorForPair(normalizedSource, normalizedTarget);
-    } catch (error) {
-      if (!this.warnedPairs.has(pairKey)) {
-        this.warnedPairs.add(pairKey);
-        console.warn(`[ChromeBuiltinTranslator] Failed to create translator for ${pairKey}:`, error);
-      }
+    } catch {
+      // The shared creation promise has recorded the failure and cooldown.
       fallbackToOriginals();
       return;
     }
@@ -224,8 +272,9 @@ export class ChromeBuiltinTranslator {
       try {
         results[index] = await translator.translate(text);
       } catch (error) {
-        console.error(`[ChromeBuiltinTranslator] Translation failed for pair ${pairKey}:`, error);
+        this.recordFailure(pairKey, 'translate', error);
         results[index] = text;
+        if (this.coolingDown(pairKey)) break;
       }
     }
   }
@@ -309,6 +358,7 @@ export class ChromeBuiltinTranslator {
   clearCache(): void {
     this.translatorCache.clear();
     this.availabilityCache.clear();
+    this.retryAfter.clear();
     this.warnedPairs.clear();
   }
 }
