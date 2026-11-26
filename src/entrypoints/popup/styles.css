@@ -1,5 +1,87 @@
 @import "../../assets/tailwind.css";
+@import "../../assets/basa-ui.css";
 
-body {
-  min-width: 448px;
+body.basa-popup {
+  box-sizing: border-box;
+  width: 384px;
+  max-height: 580px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 16px;
+  background: var(--basa-bg);
+  color: var(--basa-ink);
+  font-size: 13px;
+  line-height: 1.45;
 }
+.basa-popup-head { display: flex; align-items: center; gap: 11px; margin-bottom: 14px; }
+.basa-avatar { object-fit: contain; flex: 0 0 36px; }
+.basa-head-copy { flex: 1; min-width: 0; }
+.basa-head-copy h1 { font-size: 17px; font-weight: 650; letter-spacing: -.025em; }
+.basa-head-copy > span { font-size: 11px; color: var(--basa-muted); }
+.basa-popup-main { display: grid; gap: 10px; }
+.basa-section {
+  display: grid;
+  gap: 10px;
+  padding: 13px 14px;
+  background: var(--basa-panel);
+  border: 1px solid var(--basa-line);
+  border-radius: 16px;
+}
+.basa-section h2 { font-size: 13px; font-weight: 650; }
+.basa-section h3 { margin-top: 3px; padding-top: 10px; border-top: 1px solid var(--basa-line); font-size: 11px; color: var(--basa-muted); font-weight: 600; }
+.basa-field { display: grid; gap: 5px; min-width: 0; }
+.basa-field > span { color: var(--basa-muted); font-size: 11px; font-weight: 550; }
+.basa-popup select {
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid var(--basa-line);
+  border-radius: 10px;
+  padding: 6px 9px;
+  font-size: 12px;
+  background: var(--basa-control);
+  color: var(--basa-ink);
+  appearance: auto;
+}
+.basa-popup select:disabled { opacity: .48; }
+.basa-popup #draftOpenaiPresetId:disabled { display: none; }
+.basa-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 25px; cursor: pointer; }
+.basa-switch-row > span { flex: 1; min-width: 0; }
+.basa-switch-label { display: inline-flex; align-items: center; cursor: pointer; }
+.basa-switch {
+  appearance: none;
+  position: relative;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 19px;
+  border: 1px solid var(--basa-line);
+  border-radius: 999px;
+  background: var(--basa-hover);
+  cursor: pointer;
+}
+.basa-switch::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  background: var(--basa-muted);
+  border-radius: 50%;
+}
+.basa-switch:checked { background: var(--basa-accent); border-color: var(--basa-accent); }
+.basa-switch:checked::before { left: 17px; background: var(--basa-accent-ink); }
+.basa-popup :is(button, select, input):focus-visible { outline: 2px solid var(--basa-accent); outline-offset: 2px; }
+.basa-hint { font-size: 11px; line-height: 1.55; color: var(--basa-muted); }
+.basa-options-button {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--basa-line);
+  border-radius: 12px;
+  background: var(--basa-panel);
+  color: var(--basa-ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+.basa-options-button:hover { background: var(--basa-hover); }

@@ -1,70 +1,70 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Discord Message Translator</title>
+  <title>Discord Message Translator · Basa</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
-<body class="w-[28rem] max-h-[560px] overflow-y-auto p-4">
-  <div class="space-y-3">
-    <!-- Header -->
-    <div class="flex items-center justify-between">
-      <h1 class="text-lg font-bold" data-i18n="popup_title">Discord Translator</h1>
-      <input type="checkbox" id="autoTranslate" class="toggle toggle-primary toggle-sm" checked />
+<body class="basa-popup">
+  <header class="basa-popup-head">
+    <img class="basa-avatar" src="/icons/icon48.png" width="36" height="36" alt="">
+    <div class="basa-head-copy">
+      <h1 data-i18n="popup_title">Discord Translator</h1>
+      <span>Basa</span>
     </div>
+    <label class="basa-switch-label">
+      <span class="sr-only" data-i18n="popup_autoTranslate">Auto Translate</span>
+      <input type="checkbox" id="autoTranslate" class="basa-switch" checked />
+    </label>
+  </header>
 
-    <div class="space-y-3">
-      <!-- Target Language -->
-      <div class="flex flex-col w-full">
-        <label class="label py-1">
-          <span class="text-sm" data-i18n="popup_targetLanguage">Target Language</span>
-        </label>
-        <select id="targetLanguage" class="select select-sm w-full"></select>
-      </div>
-
-      <!-- Translation Mode -->
-      <div class="flex flex-col w-full">
-        <label class="label py-1">
-          <span class="text-sm" data-i18n="popup_translationMode">Translation Mode</span>
-        </label>
-        <select id="translationMode" class="select select-sm w-full">
+  <main class="basa-popup-main">
+    <section class="basa-section">
+      <h2 data-i18n="popup_autoTranslate">Auto Translate</h2>
+      <label class="basa-field" for="targetLanguage">
+        <span data-i18n="popup_targetLanguage">Target Language</span>
+        <select id="targetLanguage"></select>
+      </label>
+      <label class="basa-field" for="translationMode">
+        <span data-i18n="popup_translationMode">Translation Mode</span>
+        <select id="translationMode">
           <option value="replace" data-i18n="common_modeReplace">Replace Original</option>
           <option value="append" data-i18n="popup_modeAppend">Show Both</option>
         </select>
-      </div>
-
-      <div class="divider my-1" data-i18n="basa_surfaces">Extra translation targets</div>
-      <label class="label"><span data-i18n="basa_navigation">Channels and categories</span><input type="checkbox" id="translateNavigation" class="toggle toggle-sm" /></label>
-      <label class="label"><span data-i18n="basa_forum">Forum titles and descriptions</span><input type="checkbox" id="translateForum" class="toggle toggle-sm" /></label>
-      <label class="label"><span data-i18n="basa_search">Search results</span><input type="checkbox" id="translateSearch" class="toggle toggle-sm" /></label>
-      <div class="divider my-1" data-i18n="basa_draft">Outgoing draft translation</div>
-      <label class="label"><span data-i18n="basa_draftEnabled">Enable draft translation button</span><input type="checkbox" id="draftEnabled" class="toggle toggle-sm" /></label>
-      <label class="label"><span data-i18n="basa_draftTarget">Draft target language</span></label>
-      <select id="draftTargetLanguage" class="select select-sm w-full"></select>
-      <label class="label"><span data-i18n="basa_draftProvider">Draft translation provider</span></label>
-      <select id="draftProvider" class="select select-sm w-full">
-        <option value="chrome-builtin" data-i18n="options_chromeBuiltinFree">Chrome built-in (free)</option>
-        <option value="inherit" data-i18n="basa_inherit">Same as incoming</option>
-        <option value="openai" data-i18n="options_providerOpenai">OpenAI Compatible</option>
-        <option value="google" data-i18n="options_providerGoogle">Google Translate</option>
-        <option value="deepl" data-i18n="options_providerDeepl">DeepL</option>
-      </select>
-      <select id="draftOpenaiPresetId" class="select select-sm w-full" aria-label="Draft OpenAI preset"></select>
-      <p class="text-xs opacity-70" data-i18n="basa_draftHint">Drafts are translated only when you press the button. Non-local providers send the draft to the configured service. Nothing is sent to Discord automatically.</p>
-
-      <!-- Open Options -->
-      <button id="openOptions" class="btn btn-sm w-full" data-i18n="popup_openOptions">Open settings</button>
-    </div>
-
-    <!-- Status Message -->
-    <div id="toast" class="toast toast-top toast-end z-50">
-      <div id="toastAlert" class="alert alert-success shadow-lg hidden py-2 px-3">
-        <span id="toastText" class="text-sm"></span>
-      </div>
+      </label>
+      <h3 data-i18n="basa_surfaces">Extra translation targets</h3>
+      <label class="basa-switch-row"><span data-i18n="basa_navigation">Channels and categories</span><input type="checkbox" id="translateNavigation" class="basa-switch" /></label>
+      <label class="basa-switch-row"><span data-i18n="basa_forum">Forum titles and descriptions</span><input type="checkbox" id="translateForum" class="basa-switch" /></label>
+      <label class="basa-switch-row"><span data-i18n="basa_search">Search results</span><input type="checkbox" id="translateSearch" class="basa-switch" /></label>
+    </section>
+    <section class="basa-section">
+      <h2 data-i18n="basa_draft">Outgoing draft translation</h2>
+      <label class="basa-switch-row"><span data-i18n="basa_draftEnabled">Enable draft translation button</span><input type="checkbox" id="draftEnabled" class="basa-switch" /></label>
+      <label class="basa-field" for="draftTargetLanguage">
+        <span data-i18n="basa_draftTarget">Draft target language</span>
+        <select id="draftTargetLanguage"></select>
+      </label>
+      <label class="basa-field" for="draftProvider">
+        <span data-i18n="basa_draftProvider">Draft translation provider</span>
+        <select id="draftProvider">
+          <option value="chrome-builtin" data-i18n="options_chromeBuiltinFree">Chrome built-in (free)</option>
+          <option value="inherit" data-i18n="basa_inherit">Same as incoming</option>
+          <option value="openai" data-i18n="options_providerOpenai">OpenAI Compatible</option>
+          <option value="google" data-i18n="options_providerGoogle">Google Translate</option>
+          <option value="deepl" data-i18n="options_providerDeepl">DeepL</option>
+        </select>
+      </label>
+      <select id="draftOpenaiPresetId" aria-label="Draft OpenAI preset"></select>
+      <p class="basa-hint" data-i18n="basa_draftHint">Drafts are translated only when you press the button. Non-local providers send the draft to the configured service. Nothing is sent to Discord automatically.</p>
+    </section>
+    <button type="button" id="openOptions" class="basa-options-button" data-i18n="popup_openOptions">Open settings</button>
+  </main>
+  <div id="toast" class="toast toast-top toast-end z-50">
+    <div id="toastAlert" class="alert alert-success shadow-lg hidden py-2 px-3">
+      <span id="toastText" class="text-sm"></span>
     </div>
   </div>
-
   <script type="module" src="./main.ts"></script>
 </body>
 </html>

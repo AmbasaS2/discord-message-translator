@@ -1,30 +1,70 @@
 
+/* Compact composer controls use Discord's live theme colors. */
 .basa-draft-tools {
-  display: flex;
-  flex-wrap: wrap;
+  display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px 6px;
-  font-size: 12px;
-  color: var(--text-muted, #b9bbbe);
+  gap: 2px;
+  align-self: center;
+  color: var(--icon-secondary, var(--interactive-normal, var(--text-muted, inherit)));
 }
-.basa-draft-tools button {
-  border: 1px solid var(--border-subtle, #555);
-  border-radius: 4px;
-  padding: 3px 7px;
-  background: var(--background-secondary, #292b2f);
-  color: var(--text-normal, #eee);
+.basa-draft-tools--fallback {
+  justify-content: flex-end;
+  padding: 2px 8px;
+}
+.basa-draft-tools[hidden],
+.basa-draft-tools [hidden],
+.basa-draft-feedback [hidden] { display: none !important; }
+.basa-draft-icon {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  box-shadow: none;
+  background: transparent;
+  color: inherit;
   cursor: pointer;
 }
-.basa-draft-tools button:disabled { opacity: .5; cursor: default; }
-.basa-draft-tools [hidden] { display: none !important; }
+.basa-draft-icon svg { display: block; width: 18px; height: 18px; pointer-events: none; }
+.basa-draft-icon:hover {
+  color: var(--icon-primary, var(--interactive-hover, var(--text-normal, inherit)));
+  background: var(--background-modifier-hover, color-mix(in srgb, currentColor 9%, transparent));
+}
+.basa-draft-icon:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
+.basa-draft-icon:disabled { opacity: .45; cursor: wait; }
+.basa-draft-feedback {
+  display: grid;
+  gap: 6px;
+  padding: 4px 10px 8px;
+  font-size: 12px;
+  color: var(--text-muted, inherit);
+}
+.basa-draft-feedback--quiet,
+.basa-draft-status--quiet {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0 !important;
+}
 .basa-draft-preview {
-  flex-basis: 100%;
+  box-sizing: border-box;
   width: 100%;
-  padding: 5px;
-  color: var(--text-normal, #eee);
-  background: var(--background-secondary, #292b2f);
-  border: 1px solid var(--border-subtle, #555);
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle, color-mix(in srgb, currentColor 18%, transparent));
+  border-radius: 10px;
+  background: var(--background-secondary, var(--bg-base-secondary, transparent));
+  color: var(--text-normal, var(--text-primary, inherit));
   resize: vertical;
 }
 

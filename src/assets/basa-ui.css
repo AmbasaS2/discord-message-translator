@@ -1,0 +1,27 @@
+
+:root {
+  color-scheme: light dark;
+  --basa-bg: #f7f5ef;
+  --basa-panel: #fffdf9;
+  --basa-ink: #343730;
+  --basa-muted: #676b63;
+  --basa-line: #deded3;
+  --basa-control: #fdfcf8;
+  --basa-hover: #eceee7;
+  --basa-accent: #617e9f;
+  --basa-accent-ink: #fff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --basa-bg: #222522;
+    --basa-panel: #2c302d;
+    --basa-ink: #ebede7;
+    --basa-muted: #b5bcb4;
+    --basa-line: #454b45;
+    --basa-control: #303631;
+    --basa-hover: #3d463f;
+    --basa-accent: #9ab5d4;
+    --basa-accent-ink: #19232d;
+  }
+}
+body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Apple SD Gothic Neo", system-ui, sans-serif; }

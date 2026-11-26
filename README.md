@@ -227,3 +227,7 @@ options page (detailed configuration). Open the options page from the popup's
 ## Licence
 
 [MIT](LICENSE)
+
+### Icon attribution
+
+Composer globe, rotate-left and copy icons: [Font Awesome Free 6.7.2](https://github.com/FortAwesome/Font-Awesome/tree/6.7.2/svgs), © 2024 Fonticons, Inc., [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Original vector paths; presentation attributes adapted for inline SVG. See `public/ICON-NOTICE.txt`.

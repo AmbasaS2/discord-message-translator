@@ -1,0 +1,8 @@
+Font Awesome Free 6.7.2 — globe (solid), rotate-left (solid), copy (regular)
+Copyright 2024 Fonticons, Inc. https://fontawesome.com/
+Source: https://github.com/FortAwesome/Font-Awesome/tree/6.7.2/svgs
+Icons: Creative Commons Attribution 4.0 International (CC BY 4.0)
+License: https://creativecommons.org/licenses/by/4.0/
+Original vector paths retained; presentation attributes added for inline SVG and currentColor.
+No Font Awesome fonts or runtime library included.
+The extension's original software license is unchanged.

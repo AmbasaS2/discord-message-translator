@@ -1,1 +1,28 @@
 @import "../../assets/tailwind.css";
+@import "../../assets/basa-ui.css";
+
+body.basa-options {
+  background: var(--basa-bg);
+  color: var(--basa-ink);
+}
+.basa-options .card {
+  border: 1px solid var(--basa-line);
+  border-radius: 20px;
+  background: var(--basa-panel);
+  box-shadow: none;
+}
+.basa-options .card-body { padding: 20px; gap: 12px; }
+.basa-options .card-title { letter-spacing: -.015em; }
+.basa-options :is(.select, .input, .textarea, .btn) {
+  border-radius: 10px;
+  box-shadow: none;
+}
+.basa-options :is(.select, .input, .textarea) {
+  background: var(--basa-control);
+  color: var(--basa-ink);
+  border-color: var(--basa-line);
+}
+.basa-options :is(.select, .input, .textarea, .btn):focus-visible {
+  outline: 2px solid var(--basa-accent);
+  outline-offset: 1px;
+}

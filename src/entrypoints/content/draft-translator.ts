@@ -1,9 +1,16 @@
 import { createTranslationClient } from '@/lib/api/factory';
 import { getSettings } from '@/lib/utils/settings';
 import { t } from '@/lib/utils/i18n';
+import { createDraftIcon, type DraftIcon } from './basa-icons';
 
 const EDITOR_SELECTOR = '[data-slate-editor="true"][contenteditable="true"][role="textbox"]';
 const COMPOSER_SELECTOR = '[class*="channelTextArea"]';
+const BUTTONS_SELECTOR = '[class^="buttons_"], [class*=" buttons_"], [class~="buttons"]';
+
+export function hasDraftText(editor: HTMLElement): boolean {
+  if (editor.querySelector('[data-slate-placeholder]') && !editor.querySelector('[data-slate-string]')) return false;
+  return Boolean((editor.textContent ?? '').replace(/[\u200b\uFEFF]/g, '').trim());
+}
 
 export function readDraft(editor: HTMLElement): string {
   if (editor.querySelector('[data-slate-placeholder]') && !editor.querySelector('[data-slate-string]')) return '';
@@ -29,10 +36,13 @@ function replaceDraft(editor: HTMLElement, value: string): boolean {
   return inserted && readDraft(editor) === value.trim();
 }
 
-function makeButton(key: string): HTMLButtonElement {
+function makeButton(key: string, icon: DraftIcon): HTMLButtonElement {
   const button = document.createElement('button');
   button.type = 'button';
-  button.textContent = t(key);
+  button.className = 'basa-draft-icon';
+  button.title = t(key);
+  button.setAttribute('aria-label', t(key));
+  button.appendChild(createDraftIcon(icon));
   button.addEventListener('mousedown', (event) => event.preventDefault());
   return button;
 }
@@ -41,6 +51,9 @@ export class DraftTranslator {
   private enabled = false;
   private editor: HTMLElement | null = null;
   private panel: HTMLElement | null = null;
+  private feedback: HTMLElement | null = null;
+  private removeInputListener: (() => void) | null = null;
+  private configureRevision = 0;
   private generation = 0;
   private busy = false;
 
@@ -49,8 +62,17 @@ export class DraftTranslator {
     void this.configure();
   }
 
+  stop(): void {
+    this.configureRevision++;
+    this.enabled = false;
+    document.removeEventListener('focusin', this.onFocus);
+    this.detach();
+  }
+
   async configure(): Promise<void> {
+    const revision = ++this.configureRevision;
     const settings = await getSettings();
+    if (revision !== this.configureRevision) return;
     this.enabled = settings.draftEnabled;
     if (!this.enabled) this.detach();
     else if (document.activeElement instanceof HTMLElement) this.attach(document.activeElement);
@@ -62,8 +84,12 @@ export class DraftTranslator {
 
   private detach(): void {
     this.generation++;
+    this.removeInputListener?.();
+    this.removeInputListener = null;
     this.panel?.remove();
+    this.feedback?.remove();
     this.panel = null;
+    this.feedback = null;
     this.editor = null;
     this.busy = false;
   }
@@ -77,9 +103,11 @@ export class DraftTranslator {
     this.editor = editor;
     const panel = document.createElement('div');
     panel.className = 'basa-draft-tools';
-    const translate = makeButton('basa_translateDraft');
-    const restore = makeButton('basa_restoreDraft');
-    const copy = makeButton('basa_copyDraft');
+    const translate = makeButton('basa_translateDraft', 'globe');
+    const restore = makeButton('basa_restoreDraft', 'restore');
+    const copy = makeButton('basa_copyDraft', 'copy');
+    const feedback = document.createElement('div');
+    feedback.className = 'basa-draft-feedback basa-draft-feedback--quiet';
     const status = document.createElement('span');
     status.className = 'basa-draft-status';
     status.setAttribute('aria-live', 'polite');
@@ -88,27 +116,70 @@ export class DraftTranslator {
     preview.readOnly = true;
     preview.rows = 2;
     preview.hidden = true;
-    restore.hidden = true;
-    copy.hidden = true;
-    panel.append(translate, restore, copy, status, preview);
+    panel.append(translate, restore, copy);
+    feedback.append(status, preview);
     this.panel = panel;
-    // Mount next to, never inside, Discord's editable Slate node.
-    composer.appendChild(panel);
+    this.feedback = feedback;
+    // Use the existing accessory row; fall back to one compact row outside Slate.
+    const buttons = composer.querySelector<HTMLElement>(BUTTONS_SELECTOR);
+    if (buttons && !editor.contains(buttons)) buttons.prepend(panel);
+    else {
+      panel.classList.add('basa-draft-tools--fallback');
+      composer.appendChild(panel);
+    }
+    composer.appendChild(feedback);
 
     let original = '';
     let result = '';
     let applied = false;
+    let writing = false;
+
+    const updateVisibility = () => {
+      const hasText = hasDraftText(editor);
+      translate.hidden = !hasText || applied;
+      restore.hidden = !hasText || !applied;
+      copy.hidden = !result || (!applied && preview.hidden);
+      panel.hidden = translate.hidden && restore.hidden && copy.hidden;
+    };
+    const setStatus = (key: string, visible = false) => {
+      status.textContent = key ? t(key) : '';
+      feedback.classList.toggle('basa-draft-feedback--quiet', !visible && preview.hidden);
+      status.classList.toggle('basa-draft-status--quiet', !visible);
+    };
+    const writeDraft = (value: string) => {
+      writing = true;
+      try { return replaceDraft(editor, value); }
+      finally { writing = false; }
+    };
+    const onInput = () => {
+      if (writing || this.editor !== editor) return;
+      // Changes invalidate a completed result, but never interrupt an active request.
+      if (!this.busy) {
+        original = '';
+        result = '';
+        applied = false;
+        preview.hidden = true;
+        setStatus('');
+      }
+      updateVisibility();
+    };
+    editor.addEventListener('input', onInput);
+    this.removeInputListener = () => editor.removeEventListener('input', onInput);
+    updateVisibility();
 
     translate.addEventListener('click', async () => {
       if (this.busy || this.editor !== editor || !editor.isConnected) return;
       const snapshot = readDraft(editor);
-      if (!snapshot) { status.textContent = t('basa_noDraft'); return; }
+      if (!snapshot) { updateVisibility(); return; }
       this.busy = true;
       translate.disabled = true;
-      restore.hidden = true;
-      copy.hidden = true;
+      translate.setAttribute('aria-busy', 'true');
+      original = '';
+      result = '';
+      applied = false;
       preview.hidden = true;
-      status.textContent = t('basa_translating');
+      setStatus('basa_translating');
+      updateVisibility();
       const generation = this.generation;
       const isCurrent = () => generation === this.generation && this.editor === editor && editor.isConnected;
       try {
@@ -125,40 +196,44 @@ export class DraftTranslator {
         const translated = await client.translate(snapshot, settings.draftTargetLanguage, source);
         if (!isCurrent()) return;
         if (!translated.trim() || translated.trim() === snapshot) {
-          status.textContent = t('basa_draftUnchanged');
+          setStatus('basa_draftUnchanged', true);
           return;
         }
         original = snapshot;
         result = translated;
         preview.value = result;
-        copy.hidden = false;
         // Rich Slate nodes and edits made during the request must remain intact.
         const unchanged = readDraft(editor) === snapshot;
-        applied = unchanged && !isRichDraft(editor) && replaceDraft(editor, result);
-        restore.hidden = !applied;
+        applied = unchanged && !isRichDraft(editor) && writeDraft(result);
         preview.hidden = applied;
-        status.textContent = t(applied ? 'basa_draftReady' : 'basa_draftPreview');
+        setStatus(applied ? 'basa_draftReady' : 'basa_draftPreview', !applied);
+        updateVisibility();
       } catch {
-        if (isCurrent()) status.textContent = t('basa_draftError');
+        if (isCurrent()) setStatus('basa_draftError', true);
       } finally {
         if (generation === this.generation) {
           this.busy = false;
           translate.disabled = false;
+          translate.removeAttribute('aria-busy');
+          updateVisibility();
         }
       }
     });
 
     restore.addEventListener('click', () => {
       if (!applied || this.editor !== editor || readDraft(editor) !== result.trim() || isRichDraft(editor)) {
-        status.textContent = t('basa_restoreBlocked');
+        setStatus('basa_restoreBlocked', true);
         return;
       }
-      if (replaceDraft(editor, original)) {
+      if (writeDraft(original)) {
         applied = false;
-        restore.hidden = true;
-        status.textContent = t('basa_restored');
+        original = '';
+        result = '';
+        preview.hidden = true;
+        setStatus('basa_restored');
+        updateVisibility();
       } else {
-        status.textContent = t('basa_restoreBlocked');
+        setStatus('basa_restoreBlocked', true);
       }
     });
 
@@ -166,12 +241,13 @@ export class DraftTranslator {
       if (!result) return;
       try {
         await navigator.clipboard.writeText(result);
-        status.textContent = t('basa_copied');
+        setStatus('basa_copied', !preview.hidden);
       } catch {
         preview.hidden = false;
         preview.focus();
         preview.select();
-        status.textContent = t('basa_copyFailed');
+        setStatus('basa_copyFailed', true);
+        updateVisibility();
       }
     });
   }
