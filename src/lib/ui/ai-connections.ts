@@ -10,6 +10,13 @@ export function serviceLabel(service: ApiService): string {
   return API_SERVICES[service].label;
 }
 
+function createOption(label: string, value: string): HTMLOptionElement {
+  const option = document.createElement('option');
+  option.textContent = label;
+  option.value = value;
+  return option;
+}
+
 export function populateAiConnections(
   select: HTMLSelectElement,
   settings: Settings,
@@ -21,7 +28,7 @@ export function populateAiConnections(
     : getActiveOpenaiPreset(settings)?.id ?? '';
   select.replaceChildren();
   if (direction === 'draft' || settings.openaiPresets.length === 0) {
-    const option = new Option(
+    const option = createOption(
       direction === 'draft' && settings.openaiPresets.length ? t('basa_currentPreset') : t('basa_noConnections'),
       '',
     );
@@ -34,12 +41,12 @@ export function populateAiConnections(
     const group = document.createElement('optgroup');
     group.label = serviceLabel(service);
     for (const preset of presets) {
-      group.appendChild(new Option(`${preset.name} · ${preset.model}`, preset.id));
+      group.appendChild(createOption(`${preset.name} · ${preset.model}`, preset.id));
     }
     select.appendChild(group);
   }
   if (chosen && !settings.openaiPresets.some((preset) => preset.id === chosen)) {
-    const missing = new Option(t('basa_missingConnection'), chosen);
+    const missing = createOption(t('basa_missingConnection'), chosen);
     missing.disabled = true;
     select.appendChild(missing);
   }

@@ -37,7 +37,9 @@ describe('independent AI connection choices', () => {
 
   it('disables unconfigured AI and names the configured service', () => {
     const select = document.createElement('select');
-    const option = new Option('AI API', 'openai');
+    const option = document.createElement('option');
+    option.textContent = 'AI API';
+    option.value = 'openai';
     select.append(option);
     updateAiProviderLabel(select, [], '');
     expect(option.disabled).toBe(true);
