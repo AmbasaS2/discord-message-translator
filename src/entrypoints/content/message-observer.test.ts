@@ -303,7 +303,8 @@ describe('interleaved bilingual modes', () => {
     observer.start();
     await show(...nodes);
     expect(nodes[0]!.querySelectorAll('.basa-bilingual-unit')).toHaveLength(2);
-    expect(nodes[0]!.querySelector('[id^="message-content-"]')?.textContent).toBe('First.첫째. Second.둘째.');
+    expect(nodes[0]!.querySelector('.basa-bilingual-preview')?.textContent).toBe('First.첫째. Second.');
+    expect(nodes[0]!.querySelector('[id^="message-content-"] > span[hidden]')?.textContent).toBe('First. Second.');
     expect(translateMessageBatch).toHaveBeenCalled();
     expect(translateMessage).not.toHaveBeenCalled();
   });

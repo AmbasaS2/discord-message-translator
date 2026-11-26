@@ -31,7 +31,9 @@ export interface BilingualLayout {
 
 const BLOCK = /^(P|DIV|SECTION|ARTICLE|BLOCKQUOTE|H[1-6]|UL|OL|LI|DL|DT|DD)$/;
 const PROTECTED = 'a[href], code, img, time, [class*="emojiContainer"], [class*="channelMention"], [class*="roleMention"], [class*="userMention"], .mention, [contenteditable="false"]';
-const IGNORED = '[class*="hiddenVisually"], [aria-hidden="true"]:not(img):not([class*="emojiContainer"]), .discord-translator-translation, button, svg, script, style';
+export const BILINGUAL_PREVIEW_CLASS = 'basa-bilingual-preview';
+const DISPLAY_SELECTOR = `.discord-translator-translation, .${BILINGUAL_PREVIEW_CLASS}`;
+const IGNORED = `[class*="hiddenVisually"], [aria-hidden="true"]:not(img):not([class*="emojiContainer"]), ${DISPLAY_SELECTOR}, button, svg, script, style`;
 const MAX_UNITS = 96;
 let sentenceSegmenter: Intl.Segmenter | undefined;
 
@@ -190,14 +192,13 @@ export function bilingualUnitId(messageId: string, text: string, ordinal = 0, fi
   return `${messageId}-basa-pair-v2-${fingerprint}-${ordinal}-${text.length}-${hashText(text)}`;
 }
 
-interface OwnedSplit { original: Text; suffix: Text; prefix: string; suffixText: string }
-const ownedSplits = new WeakMap<HTMLElement, OwnedSplit[]>();
+const originalHolders = new WeakMap<HTMLElement, HTMLElement[]>();
 
 /** Read only Discord's source, without collecting any previously inserted translation. */
 export function readOriginalSource(root: HTMLElement): string {
-  if (!root.querySelector('.discord-translator-translation')) return root.textContent ?? '';
+  if (!root.querySelector(DISPLAY_SELECTOR)) return root.textContent ?? '';
   const visit = (node: Node): string => {
-    if (node instanceof Element && node.matches('.discord-translator-translation')) return '';
+    if (node instanceof Element && node.matches(DISPLAY_SELECTOR)) return '';
     if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
     let value = '';
     for (const child of node.childNodes) value += visit(child);
@@ -206,40 +207,44 @@ export function readOriginalSource(root: HTMLElement): string {
   return visit(root);
 }
 
-/** Undo only our own display nodes and text splits. Never restore stale source text. */
+/** Remove the display and put back only the source nodes still in the message. */
 export function clearTranslationView(root: HTMLElement): void {
-  root.querySelectorAll('.discord-translator-translation').forEach(node => node.remove());
-  for (const split of (ownedSplits.get(root) ?? []).slice().reverse()) {
-    const { original, suffix, prefix, suffixText } = split;
-    if (!root.contains(suffix)) continue;
-    if (root.contains(original) && original.parentNode === suffix.parentNode && original.data === prefix) {
-      original.data += suffix.data;
-      suffix.remove();
-    } else if (suffix.data === suffixText) {
-      // React may have replaced the original text with the entire edited message.
-      suffix.remove();
-    }
+  const views = root.querySelectorAll(DISPLAY_SELECTOR);
+  for (const view of views) view.remove();
+  for (const holder of originalHolders.get(root) ?? []) {
+    if (root.contains(holder)) holder.replaceWith(...holder.childNodes);
   }
-  ownedSplits.delete(root);
+  originalHolders.delete(root);
   for (const child of Array.from(root.children)) {
     if (child.classList.contains('discord-translator-original')) child.replaceWith(...child.childNodes);
   }
 }
 
-function insertAfterAnchor(root: HTMLElement, anchor: Anchor, translation: HTMLElement, splits: OwnedSplit[]): void {
+function insertAfterAnchor(root: HTMLElement, anchor: Anchor, translation: HTMLElement): void {
   let node: Node = anchor.node;
-  if (anchor.offset !== undefined && anchor.offset < anchor.node.length) {
-    const following = anchor.node.splitText(anchor.offset);
-    splits.push({ original: anchor.node, suffix: following, prefix: anchor.node.data, suffixText: following.data });
-    following.parentNode!.insertBefore(translation, following);
-    return;
-  }
   // Prefer inserting beside a completed inline wrapper rather than inside it.
   while (node.parentElement && node.parentElement !== root &&
       !BLOCK.test(node.parentElement.tagName) && !node.nextSibling) {
     node = node.parentElement;
   }
   node.parentNode!.insertBefore(translation, node.nextSibling);
+}
+
+function renderTextPreview(source: Text, inserts: Array<{ offset: number; node: HTMLElement }>): HTMLElement {
+  const holder = document.createElement('span');
+  holder.hidden = true;
+  const preview = document.createElement('span');
+  preview.className = BILINGUAL_PREVIEW_CLASS;
+  let cursor = 0;
+  for (const { offset, node } of inserts) {
+    preview.append(source.data.slice(cursor, offset), node);
+    cursor = offset;
+  }
+  preview.append(source.data.slice(cursor));
+  // Keep the editable Text intact. Only the display copy is sliced at offsets.
+  source.before(holder, preview);
+  holder.appendChild(source);
+  return holder;
 }
 
 /**
@@ -357,12 +362,20 @@ export function renderBilingualLayout(root: HTMLElement, layout: BilingualLayout
     }
     start = end;
   }
-  // Later text offsets must be used first so splitText cannot invalidate them.
-  const splits: OwnedSplit[] = [];
-  for (let i = inserts.length - 1; i >= 0; i--) {
-    const item = inserts[i]!;
-    insertAfterAnchor(root, item.anchor, item.node, splits);
+  const textPreviews = new Map<Text, Array<{ offset: number; node: HTMLElement }>>();
+  for (const { anchor, node } of inserts) {
+    if (anchor.offset === undefined || anchor.offset === anchor.node.length) continue;
+    const group = textPreviews.get(anchor.node) ?? [];
+    group.push({ offset: anchor.offset, node });
+    textPreviews.set(anchor.node, group);
   }
-  if (splits.length) ownedSplits.set(root, splits);
+  // Place boundary translations before adding previews, while inline sibling relationships are intact.
+  for (let i = inserts.length - 1; i >= 0; i--) {
+    const { anchor, node } = inserts[i]!;
+    if (anchor.offset === undefined || anchor.offset === anchor.node.length) insertAfterAnchor(root, anchor, node);
+  }
+  if (textPreviews.size) {
+    originalHolders.set(root, Array.from(textPreviews, ([source, group]) => renderTextPreview(source, group)));
+  }
   return inserts.length > 0;
 }

@@ -61,14 +61,29 @@ describe('interleaved bilingual layout', () => {
     expect(root.querySelectorAll('button')).toHaveLength(1);
   });
 
-  it('removes stale generated suffixes instead of overwriting an edited source node', () => {
+  it.each(['replace', 'partial'] as const)('preserves the intact source during a %s edit', edit => {
     const root = mount('One. Two. Three.');
     const original = root.firstChild as Text;
     expect(renderBilingualLayout(root, collectBilingualLayout(root, 'sentence')!, ['하나.', '둘.', '셋.'])).toBe(true);
-    original.data = 'Edited message.';
+    expect(original.data).toBe('One. Two. Three.');
+    const expected = edit === 'replace' ? 'Edited message.' : 'Edited. Two. Three.';
+    if (edit === 'replace') original.data = expected;
+    else original.replaceData(0, 3, 'Edited');
+    expect(readOriginalSource(root)).toBe(expected);
     clearTranslationView(root);
-    expect(root.textContent).toBe('Edited message.');
+    expect(root.textContent).toBe(expected);
     expect(root.firstChild).toBe(original);
+  });
+
+  it('does not restore a source node removed by its parent', () => {
+    const root = mount('<p>One. Two.</p>');
+    const parent = root.firstElementChild!;
+    const original = parent.firstChild!;
+    expect(renderBilingualLayout(root, collectBilingualLayout(root, 'sentence')!, ['하나.', '둘.'])).toBe(true);
+    parent.textContent = 'Replacement source.';
+    clearTranslationView(root);
+    expect(root.innerHTML).toBe('<p>Replacement source.</p>');
+    expect(root.contains(original)).toBe(false);
   });
 
   it('restores the original text nodes after removing an unchanged interleaved view', () => {
@@ -99,7 +114,7 @@ describe('interleaved bilingual layout', () => {
     const root = mount('<span>One. Two. Three.</span>');
     const layout = collectBilingualLayout(root, 'sentence')!;
     expect(renderBilingualLayout(root, layout, ['하나.', '둘.', '셋.'])).toBe(true);
-    const children = Array.from(root.firstElementChild!.childNodes);
+    const children = Array.from(root.querySelector('.basa-bilingual-preview')!.childNodes);
     expect(children.map((node) => node.textContent?.trim())).toEqual(['One.', '하나.', 'Two.', '둘.', 'Three.']);
     expect(root.firstElementChild?.nextElementSibling?.textContent).toBe('셋.');
     expect(renderBilingualLayout(root, layout, ['하나.', '둘.', '셋.'])).toBe(false);
@@ -120,7 +135,7 @@ describe('interleaved bilingual layout', () => {
     expect(root.querySelector('.basa-bilingual-unit .mention')?.textContent).toBe('@Helper');
     expect(root.querySelector('.basa-bilingual-unit a')?.getAttribute('href')).toBe('https://example.com');
     expect(root.querySelector('.basa-bilingual-unit code')?.textContent).toBe('inline()');
-    pairs.forEach((pair) => pair.remove());
+    clearTranslationView(root);
     expect(root.querySelector('a')).toBe(link);
     expect(root.querySelector('.mention')).toBe(mention);
     expect(root.querySelector('ul > li > ol > li')).toBe(list);

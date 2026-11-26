@@ -5,7 +5,7 @@ import { RequestQueue, debounce } from '@/lib/utils/async-control';
 import { ChromeLanguageDetector } from '@/lib/api/chrome-language-detector';
 import { extractBlocks, assembleTranslation, type StructuredBlock } from '@/lib/utils/structure-preserving';
 import { shouldSkipText } from './language-skip';
-import { collectBilingualLayout, renderBilingualLayout, bilingualUnitId, clearTranslationView, readOriginalSource, type BilingualLayout } from '@/lib/utils/bilingual-units';
+import { BILINGUAL_PREVIEW_CLASS, collectBilingualLayout, renderBilingualLayout, bilingualUnitId, clearTranslationView, readOriginalSource, type BilingualLayout } from '@/lib/utils/bilingual-units';
 import { SurfaceTranslator, isSearchSurface } from './surface-translator';
 
 /**
@@ -29,7 +29,7 @@ const BATCH_SIZE = 10; // Number of messages to translate in a single batch
 const LANGUAGE_DETECTION_MIN_CONFIDENCE = 0.7; // Minimum confidence for language detection
 
 const SOURCE_REGION = '[id^="message-content-"], [id^="message-accessories-"], [id^="message-reply-context-"]';
-const OWN_UI = '.discord-translator-translation, .basa-draft-tools, .basa-draft-feedback';
+const OWN_UI = `.discord-translator-translation, .${BILINGUAL_PREVIEW_CLASS}, .basa-draft-tools, .basa-draft-feedback`;
 const VIEW_SELECTOR = '.discord-translator-translation';
 
 interface SourceState { source: string; views: HTMLElement[] }
