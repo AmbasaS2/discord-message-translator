@@ -17,7 +17,6 @@ body.basa-popup {
 .basa-avatar { object-fit: contain; flex: 0 0 36px; }
 .basa-head-copy { flex: 1; min-width: 0; }
 .basa-head-copy h1 { font-size: 17px; font-weight: 650; letter-spacing: -.025em; }
-.basa-head-copy > span { font-size: 11px; color: var(--basa-muted); }
 .basa-popup-main { display: grid; gap: 10px; }
 .basa-section {
   display: grid;
