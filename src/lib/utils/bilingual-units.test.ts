@@ -44,21 +44,31 @@ describe('interleaved bilingual layout', () => {
     const layout = collectBilingualLayout(root, 'sentence')!;
     expect(renderBilingualLayout(root, layout, ['하나.', '둘.', '셋.'])).toBe(true);
     const children = Array.from(root.firstElementChild!.childNodes);
-    expect(children.map((node) => node.textContent?.trim())).toEqual(['One.', '하나.', 'Two.', '둘.', 'Three.', '셋.']);
+    expect(children.map((node) => node.textContent?.trim())).toEqual(['One.', '하나.', 'Two.', '둘.', 'Three.']);
+    expect(root.firstElementChild?.nextElementSibling?.textContent).toBe('셋.');
     expect(renderBilingualLayout(root, layout, ['하나.', '둘.', '셋.'])).toBe(false);
   });
 
-  it('keeps original links, nested lists, and code blocks intact', () => {
-    const root = mount('<p>Read <a href="https://example.com">this link</a>.</p><ul><li>Parent.<ol><li>Child.</li></ol></li></ul><pre><code>do_not_translate()</code></pre>');
+  it.each(['paragraph', 'sentence'] as const)('preserves the original rich message in %s mode', (granularity) => {
+    const root = mount('<p>Ask <span class="mention" role="button">@Helper</span>. Read <a href="https://example.com">this link</a>.</p><ul><li>Parent.<ol><li>Child <code>inline()</code>.</li></ol></li></ul><pre><code>do_not_translate()</code></pre>');
+    const original = root.innerHTML;
     const link = root.querySelector('a')!;
-    const code = root.querySelector('pre')!;
-    const layout = collectBilingualLayout(root, 'paragraph')!;
-    expect(layout.units.map(({ block }) => block.text)).toEqual(['Read §P0§.', 'Parent.', 'Child.']);
-    expect(renderBilingualLayout(root, layout, ['§P0§ 읽어.', '부모.', '자식.'])).toBe(true);
+    const mention = root.querySelector('.mention')!;
+    const list = root.querySelector('ul > li > ol > li')!;
+    const layout = collectBilingualLayout(root, granularity)!;
+    expect(layout.units.map(({ block }) => block.text))
+      .toEqual(['Ask §P0§.', 'Read §P1§.', 'Parent.', 'Child §P2§.']);
+    expect(renderBilingualLayout(root, layout, ['§P0§에게 물어봐.', '§P1§ 읽어.', '부모.', '자식 §P2§.'])).toBe(true);
+    const pairs = root.querySelectorAll('.basa-bilingual-unit');
+    expect(pairs).toHaveLength(granularity === 'paragraph' ? 3 : 4);
+    expect(root.querySelector('.basa-bilingual-unit .mention')?.textContent).toBe('@Helper');
+    expect(root.querySelector('.basa-bilingual-unit a')?.getAttribute('href')).toBe('https://example.com');
+    expect(root.querySelector('.basa-bilingual-unit code')?.textContent).toBe('inline()');
+    pairs.forEach((pair) => pair.remove());
     expect(root.querySelector('a')).toBe(link);
-    expect(root.querySelector('pre')).toBe(code);
-    expect(root.querySelector('ul > li > ol > li')).not.toBeNull();
-    expect(root.querySelectorAll('.basa-bilingual-unit')).toHaveLength(3);
+    expect(root.querySelector('.mention')).toBe(mention);
+    expect(root.querySelector('ul > li > ol > li')).toBe(list);
+    expect(root.innerHTML).toBe(original);
   });
 
   it('skips unchanged units and refuses stale asynchronous results', () => {
