@@ -363,22 +363,28 @@ describe('OpenAICompatibleClient', () => {
       expect(body.max_tokens).toBe(4000);
     });
 
-    it('should retry only the missing item individually', async () => {
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      mockContents(tagged('Bonjour', null, 'Merci'), 'Au revoir');
+    it('retains successful IDs without paying for missing items again', async () => {
+      const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+      mockContents(tagged('Bonjour', null, 'Merci'));
+      expect(await client.translateBatch(['Hello', 'Goodbye', 'Thanks'], 'fr'))
+        .toEqual(['Bonjour', '', 'Merci']);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      debug.mockRestore();
+    });
 
-      const result = await client.translateBatch(['Hello', 'Goodbye', 'Thanks'], 'fr');
-
-      expect(result).toEqual(['Bonjour', 'Au revoir', 'Merci']);
-      expect(fetch).toHaveBeenCalledTimes(2);
-      const retry = JSON.parse(vi.mocked(fetch).mock.calls[1]?.[1]?.body as string);
-      expect(retry.messages[1].content).toBe('Goodbye');
-      expect(warn).toHaveBeenCalledTimes(1);
-      warn.mockRestore();
+    it('sends more than five short units in one request with shared message context', async () => {
+      const texts = Array.from({ length: 24 }, (_, i) => 'Sentence ' + i + '.');
+      const translated = texts.map((_, i) => '번역 ' + i);
+      mockContents(tagged(...translated));
+      expect(await client.translateBatch(texts, 'ko', undefined, texts.map(() => 'message-1'))).toEqual(translated);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      const body = JSON.parse(firstCall(vi.mocked(fetch).mock.calls)[1]?.body as string);
+      expect(JSON.parse(body.messages[1].content)).toEqual(texts.map((text, id) => ({ id, group: 0, text })));
+      expect(body.messages[0].content).toContain('read them together');
     });
 
     it('should ignore duplicate, out-of-range, and non-string items', async () => {
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
       mockContents(
         JSON.stringify([
           { id: 0, text: 'Bonjour' },
@@ -390,14 +396,13 @@ describe('OpenAICompatibleClient', () => {
           { id: 1, text: 42 },
           null,
         ]),
-        'Au revoir',
       );
 
       const result = await client.translateBatch(['Hello', 'Goodbye'], 'fr');
 
-      expect(result).toEqual(['Bonjour', 'Au revoir']);
-      expect(fetch).toHaveBeenCalledTimes(2);
-      warn.mockRestore();
+      expect(result).toEqual(['Bonjour', '']);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      debug.mockRestore();
     });
 
     it('should parse content wrapped in code fences', async () => {
@@ -418,15 +423,17 @@ describe('OpenAICompatibleClient', () => {
       expect(fetch).toHaveBeenCalledTimes(1);
     });
 
-    it('should translate every text individually when the content is unparseable', async () => {
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      mockContents('Only one translation', 'Bonjour', 'Au revoir');
+    it('does not fan out another request when alignment is unparseable', async () => {
+      mockContents('Only one translation');
+      expect(await client.translateBatch(['Hello', 'Goodbye'], 'fr')).toEqual(['', '']);
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
 
-      const result = await client.translateBatch(['Hello', 'Goodbye'], 'fr');
-
-      expect(result).toEqual(['Bonjour', 'Au revoir']);
+    it('splits long inputs at complete units and preserves order', async () => {
+      const text = 'A'.repeat(2400);
+      mockContents(tagged('첫째'), tagged('둘째'), tagged('셋째'));
+      expect(await client.translateBatch([text, text, text], 'ko')).toEqual(['첫째', '둘째', '셋째']);
       expect(fetch).toHaveBeenCalledTimes(3);
-      warn.mockRestore();
     });
 
     it('should propagate an HTTP error without falling back', async () => {

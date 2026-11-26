@@ -489,6 +489,6 @@
     "message": "By sentence"
   },
   "basa_bilingualHint": {
-    "message": "Refresh Discord to apply to existing messages. Sentence mode may increase API requests."
+    "message": "Paragraph and sentence layouts share cached translations. Refresh Discord to apply to existing messages."
   }
 }

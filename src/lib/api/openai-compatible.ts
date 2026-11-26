@@ -1,3 +1,4 @@
+import { planBatchRanges } from './batch-plan';
 import { buildTranslationSystemPrompt, type TranslationPurpose } from './translation-prompts';
 
 interface OpenAIConfig {
@@ -287,64 +288,70 @@ export class OpenAICompatibleClient {
    * Translate multiple texts in a single API request
    * More efficient for batch processing
    */
-  async translateBatch(texts: string[], targetLang: string, _sourceLang?: string): Promise<string[]> {
-    if (texts.length === 0) {
-      return [];
-    }
+  async translateBatch(
+    texts: string[], targetLang: string, _sourceLang?: string,
+    groupIds?: readonly string[],
+  ): Promise<string[]> {
+    if (!texts.length) return [];
 
-    // The model translates a JSON array as text instead of keeping its shape,
-    // so each text gets its own request.
+    // This specialized model does not implement indexed JSON translation.
     if (this.isPlamoTranslate) {
-      return Promise.all(texts.map((text) => this.translate(text, targetLang)));
-    }
-
-    // Limit batch size to prevent LLM from losing track
-    const MAX_BATCH_SIZE = 5;
-    if (texts.length > MAX_BATCH_SIZE) {
-      console.log(`[OpenAI] Splitting ${texts.length} texts into batches of ${MAX_BATCH_SIZE}`);
       const results: string[] = [];
-      for (let i = 0; i < texts.length; i += MAX_BATCH_SIZE) {
-        const batch = texts.slice(i, i + MAX_BATCH_SIZE);
-        const batchResults = await this.translateBatch(batch, targetLang);
-        results.push(...batchResults);
-      }
+      for (const text of texts) results.push(await this.translate(text, targetLang));
       return results;
     }
 
-    const targetLanguageName = this.getLanguageName(targetLang);
+    const extra = parseExtraBody(this.config.extraBody);
+    if (!extra.ok) throw new Error(`Invalid extra request body in settings: ${extra.error}`);
+    const configuredBudget = extra.value?.max_completion_tokens ?? extra.value?.max_tokens;
+    const budget = typeof configuredBudget === 'number' && Number.isFinite(configuredBudget) && configuredBudget > 0
+      ? configuredBudget : 4000;
 
+    // Match Phrase Desk's length-based planning rather than a fixed count of
+    // five texts. JSON overhead is included in the estimate; a hard unit cap
+    // bounds response alignment work. The user's output budget is unchanged.
+    const charBudget = Math.max(320, Math.min(16000, Math.floor(budget * 1.15)));
+    const grouped = groupIds?.length === texts.length;
+    const numericGroups = new Map<string, number>();
+    const items = texts.map((text, id) => {
+      if (!grouped) return { id, text };
+      const key = groupIds![id]!;
+      let group = numericGroups.get(key);
+      if (group === undefined) {
+        group = numericGroups.size;
+        numericGroups.set(key, group);
+      }
+      return { id, group, text };
+    });
+    const ranges = planBatchRanges(items.map(item => JSON.stringify(item).length + 1),
+      charBudget - 2, 64, grouped ? groupIds : undefined);
     const systemPrompt = buildTranslationSystemPrompt(
-      targetLanguageName, this.config.purpose ?? 'incoming', 'batch', this.config.draftPrompt, this.config.draftPromptEnabled,
+      this.getLanguageName(targetLang), this.config.purpose ?? 'incoming',
+      grouped ? 'aligned-batch' : 'batch', this.config.draftPrompt, this.config.draftPromptEnabled,
     );
-
-    const messages: ChatMessage[] = [
-      {
-        role: 'system',
-        content: systemPrompt,
-      },
-      {
-        role: 'user',
-        content: JSON.stringify(texts.map((text, id) => ({ id, text }))),
-      },
-    ];
-
-    const content = await this.requestCompletion(messages, 4000);
-    const parsed = parseIndexedTranslations(content, texts.length);
-
-    const missing = texts.flatMap((_, id) => (parsed.has(id) ? [] : [id]));
-    if (missing.length > 0) {
-      console.warn('[OpenAI] Batch response missing items, translating them individually:', JSON.stringify({
-        expected: texts.length,
-        received: parsed.size,
-        missingIds: missing,
-      }));
-    }
-
-    // Only the missing items are retried, so one merged fragment doesn't
-    // multiply requests for the whole batch.
-    const results: string[] = [];
-    for (const [id, text] of texts.entries()) {
-      results.push(parsed.get(id) ?? (await this.translate(text, targetLang)));
+    const results = texts.map(() => '');
+    for (const range of ranges) {
+      const chunk = items.slice(range.start, range.end).map((item, id) => ({ ...item, id }));
+      let content: string;
+      try {
+        content = await this.requestCompletion([
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: JSON.stringify(chunk) },
+        ], 4000);
+      } catch (error) {
+        // Do not pay again for previously completed chunks, or continue
+        // issuing requests after a transport failure.
+        if (range.start === 0) throw error;
+        console.error('[OpenAI] Later translation chunk failed; retaining completed results:', error);
+        break;
+      }
+      const parsed = parseIndexedTranslations(content, chunk.length);
+      for (const [id, translation] of parsed) results[range.start + id] = translation;
+      if (parsed.size !== chunk.length) {
+        // Missing IDs are left empty, not guessed or retried individually.
+        // Callers retain the source and cache only usable results.
+        console.debug('[OpenAI] Incomplete aligned response:', parsed.size, '/', chunk.length);
+      }
     }
     return results;
   }

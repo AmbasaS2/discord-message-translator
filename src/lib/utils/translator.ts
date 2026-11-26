@@ -1,3 +1,4 @@
+import { planBatchRanges } from '@/lib/api/batch-plan';
 import { createStorage } from '@/lib/cache/factory';
 import { createTranslationClient } from '@/lib/api/factory';
 import type { TranslationCacheEntry } from '@/types/cache';
@@ -51,7 +52,7 @@ export async function translateMessage(
  * More efficient than translating individually
  */
 export async function translateMessageBatch(
-  messages: Array<{ id: string; content: string }>,
+  messages: Array<{ id: string; content: string; groupId?: string }>,
   targetLang: string
 ): Promise<Map<string, string>> {
   const storage = await createStorage();
@@ -84,7 +85,24 @@ export async function translateMessageBatch(
   let translations: string[];
 
   try {
-    translations = await client.translateBatch(uncachedTexts, targetLang);
+    if (settings.translationProvider === 'openai' && uncachedMessages.some(message => message.groupId !== undefined)) {
+      translations = await client.translateBatch(uncachedTexts, targetLang, undefined,
+        uncachedMessages.map(message => message.groupId ?? message.id));
+    } else if (settings.translationProvider === 'google' || settings.translationProvider === 'deepl') {
+      // Respect the services' request size and item limits, while keeping
+      // ordinary short messages in one request.
+      const encoder = new TextEncoder();
+      const ranges = planBatchRanges(uncachedTexts.map(text => encoder.encode(JSON.stringify(text)).length + 1),
+        90 * 1024, settings.translationProvider === 'deepl' ? 50 : 128);
+      translations = [];
+      for (const range of ranges) {
+        const part = await client.translateBatch(uncachedTexts.slice(range.start, range.end), targetLang);
+        if (part.length !== range.end - range.start) throw new Error('Translation batch result count mismatch');
+        translations.push(...part);
+      }
+    } else {
+      translations = await client.translateBatch(uncachedTexts, targetLang);
+    }
   } catch (error) {
     console.error('[Translator] Batch translation failed:', error);
     throw error;
@@ -98,7 +116,7 @@ export async function translateMessageBatch(
   for (let i = 0; i < uncachedMessages.length; i++) {
     const message = uncachedMessages[i];
     const translation = translations[i];
-    if (message === undefined || translation === undefined) continue;
+    if (message === undefined || !translation?.trim()) continue;
 
     results.set(message.id, translation);
 

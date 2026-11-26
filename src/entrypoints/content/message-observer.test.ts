@@ -222,3 +222,48 @@ describe('interleaved bilingual modes', () => {
     expect(node.querySelector(translated)?.textContent).toBe('번역.');
   });
 });
+
+describe('batched remote visibility', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    vi.stubGlobal('IntersectionObserver', class {
+      observe = observe;
+      unobserve = unobserve;
+      disconnect = vi.fn();
+      constructor(callback: typeof onIntersection) { onIntersection = callback; }
+    });
+    vi.stubGlobal('MutationObserver', class {
+      observe = vi.fn();
+      disconnect = vi.fn();
+      constructor(callback: typeof onMutation) { onMutation = callback; }
+    });
+    vi.mocked(getSettings).mockResolvedValue({ ...DEFAULT_SETTINGS, translationProvider: 'openai', translationMode: 'append', bilingualGranularity: 'sentence' });
+    observer = new MessageTranslationObserver();
+  });
+  afterEach(() => {
+    observer.stop();
+    document.body.replaceChildren();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+  it('batches fewer than ten visible messages and never enqueues an in-flight message twice', async () => {
+    let complete!: (value: Map<string, string>) => void;
+    vi.mocked(translateMessageBatch).mockImplementationOnce(items => new Promise(resolve => {
+      complete = () => resolve(new Map(items.map(({ id }) => [id, '번역.'])));
+    }));
+    const nodes = [message(501, 'First. Second.'), message(502, 'Third.')];
+    document.body.append(...nodes);
+    observer.start();
+    await show(...nodes);
+    await show(...nodes);
+    expect(translateMessageBatch).toHaveBeenCalledTimes(1);
+    const items = vi.mocked(translateMessageBatch).mock.calls[0]![0];
+    expect(items).toHaveLength(3);
+    expect(items[0]!.groupId).toBe(items[1]!.groupId);
+    expect(items[0]!.groupId).not.toBe(items[2]!.groupId);
+    complete(new Map());
+    await vi.advanceTimersByTimeAsync(120);
+    expect(nodes[0]!.querySelectorAll('.basa-bilingual-unit')).toHaveLength(2);
+  });
+});

@@ -60,6 +60,7 @@ export class MessageTranslationObserver {
   private observedMessages = new WeakMap<HTMLElement, string>();
   private translatedMessages = new WeakSet<HTMLElement>();
   private translatedElements = new WeakSet<HTMLElement>();
+  private inFlightMessages = new WeakSet<HTMLElement>();
   private translationQueue: RequestQueue; // Request queue for rate limiting
   private pendingMessages = new Map<HTMLElement, string>();
   private processPendingDebounced: () => void;
@@ -89,7 +90,7 @@ export class MessageTranslationObserver {
             continue;
           }
           const messageId = this.observedMessages.get(element);
-          if (entry.isIntersecting && messageId && !this.translatedMessages.has(element)) {
+          if (entry.isIntersecting && messageId && !this.translatedMessages.has(element) && !this.inFlightMessages.has(element)) {
             this.pendingMessages.set(element, messageId);
           }
         }
@@ -253,7 +254,7 @@ export class MessageTranslationObserver {
 
     // Filter out already translated messages
     const filteredMessages = messagesToProcess.filter(
-      ([element]) => element.isConnected && !this.translatedMessages.has(element)
+      ([element]) => element.isConnected && !this.translatedMessages.has(element) && !this.inFlightMessages.has(element)
     );
 
     if (filteredMessages.length === 0) {
@@ -263,22 +264,30 @@ export class MessageTranslationObserver {
 
     console.log(`[MessageObserver] Processing ${filteredMessages.length} messages (queue: ${this.translationQueue.getQueueSize()}, running: ${this.translationQueue.getRunningCount()})`);
 
-    // Process messages in batches for efficiency
-    if (filteredMessages.length >= BATCH_SIZE) {
-      // Use batch translation for better performance
+    // A visibility callback can fire again before a queued request finishes.
+    // Mark the DOM element before enqueueing so it cannot create a second job.
+    const remote = settings.translationProvider !== 'chrome-builtin';
+    const paired = settings.translationMode === 'append' && settings.bilingualGranularity !== 'message';
+    const batch = settings.translationProvider === 'openai' ||
+      filteredMessages.length >= BATCH_SIZE ||
+      (filteredMessages.length > 1 && (remote || paired));
+    if (batch) {
+      for (const [element] of filteredMessages) this.inFlightMessages.add(element);
       this.translationQueue.add(async () => {
-        await this.handleVisibleMessagesBatch(filteredMessages, settings);
+        if (this.active) await this.handleVisibleMessagesBatch(filteredMessages, settings);
       }).catch((error) => {
-        console.error(`[MessageObserver] Batch translation failed:`, error);
+        console.error('[MessageObserver] Batch translation failed:', error);
+      }).finally(() => {
+        for (const [element] of filteredMessages) this.inFlightMessages.delete(element);
       });
     } else {
-      // For small numbers, use individual translation
       for (const [element, messageId] of filteredMessages) {
+        this.inFlightMessages.add(element);
         this.translationQueue.add(async () => {
-          await this.handleVisibleMessage(element, settings);
+          if (this.active) await this.handleVisibleMessage(element, settings);
         }).catch((error) => {
           console.error(`[MessageObserver] Translation failed for message ${messageId}:`, error);
-        });
+        }).finally(() => this.inFlightMessages.delete(element));
       }
     }
     this.scheduleSurfaceWork();
@@ -324,6 +333,7 @@ export class MessageTranslationObserver {
       entries: BlockEntry[];
       embed: boolean;
       bilingual?: BilingualLayout;
+      groupId: string;
     };
     const plans: Array<SimplePlan | StructuredPlan> = [];
 
@@ -379,10 +389,10 @@ export class MessageTranslationObserver {
 
     try {
       // Flatten all plans into a unique set of batch entries.
-      const uniqueContents = new Map<string, string>();
-      const pushUnique = (id: string, content: string) => {
+      const uniqueContents = new Map<string, { id: string; content: string; groupId?: string }>();
+      const pushUnique = (id: string, content: string, groupId?: string) => {
         if (!uniqueContents.has(id)) {
-          uniqueContents.set(id, content);
+          uniqueContents.set(id, { id, content, ...(groupId === undefined ? {} : { groupId }) });
         }
       };
       for (const plan of plans) {
@@ -390,13 +400,13 @@ export class MessageTranslationObserver {
           pushUnique(plan.contentId, plan.content);
         } else {
           plan.entries.forEach(({ id, block, send }) => {
-            if (send) pushUnique(id, block.text);
+            if (send) pushUnique(id, block.text, plan.groupId);
           });
         }
       }
 
       const translations = await translateMessageBatch(
-        Array.from(uniqueContents.entries()).map(([id, content]) => ({ id, content })),
+        Array.from(uniqueContents.values()),
         settings.targetLanguage
       );
 
@@ -405,10 +415,14 @@ export class MessageTranslationObserver {
       const incompleteEmbeds = new Set<HTMLElement>();
 
       for (const plan of plans) {
+        if (!this.active || !plan.element.isConnected) continue;
         if (plan.kind === 'simple') {
           const translation = translations.get(plan.contentId);
           if (!translation || translation === plan.content) {
-            if (plan.type === 'embed-section') incompleteEmbeds.add(plan.parent);
+            if (settings.translationProvider === 'openai') {
+              this.translatedElements.add(plan.element);
+              translatedParents.add(plan.parent);
+            } else if (plan.type === 'embed-section') incompleteEmbeds.add(plan.parent);
             continue;
           }
           if (plan.type === 'embed-section') {
@@ -421,12 +435,21 @@ export class MessageTranslationObserver {
         } else {
           const translatedBlocks = plan.entries.map((entry) => resolveBlock(entry, translations, plan.embed || Boolean(plan.bilingual)));
           if (!translatedBlocks.some(({ block, translation }) => translation !== block.text)) {
-            if (plan.embed) incompleteEmbeds.add(plan.parent);
+            if (settings.translationProvider === 'openai') {
+              this.translatedElements.add(plan.element);
+              translatedParents.add(plan.parent);
+            } else if (plan.embed) incompleteEmbeds.add(plan.parent);
             continue;
           }
           if (plan.bilingual) {
             if (!this.active || !renderBilingualLayout(plan.element, plan.bilingual, translatedBlocks.map(({ translation, complete }) => complete ? translation : undefined))) {
-              incompleteEmbeds.add(plan.parent);
+              if (settings.translationProvider === 'openai' && plan.element.isConnected &&
+                  plan.element.textContent === plan.bilingual.source) {
+                // A missing pair must not trigger another paid request while
+                // this same message remains mounted.
+                this.translatedElements.add(plan.element);
+                translatedParents.add(plan.parent);
+              } else incompleteEmbeds.add(plan.parent);
               continue;
             }
           } else {
@@ -471,7 +494,7 @@ export class MessageTranslationObserver {
     settings: Awaited<ReturnType<typeof getSettings>>
   ):
     | { kind: 'simple'; contentId: string; content: string; element: HTMLElement; parent: HTMLElement; type: 'message-content' | 'embed-section' }
-    | { kind: 'structured'; element: HTMLElement; parent: HTMLElement; entries: BlockEntry[]; embed: boolean; bilingual?: BilingualLayout }
+    | { kind: 'structured'; element: HTMLElement; parent: HTMLElement; entries: BlockEntry[]; embed: boolean; bilingual?: BilingualLayout; groupId: string }
     | null {
     const isReplyContext = item.element.closest('[id^="message-reply-context-"]') !== null;
 
@@ -489,7 +512,7 @@ export class MessageTranslationObserver {
             ? item.id : bilingualUnitId(item.id, block.text, index, bilingual.fingerprint),
           send,
         }));
-        return { kind: 'structured', element: item.element, parent, entries, embed, bilingual };
+        return { kind: 'structured', element: item.element, parent, entries, embed, bilingual, groupId: getTranslatableElementKey(item) };
       }
     }
     if (canStructure) {
@@ -510,6 +533,7 @@ export class MessageTranslationObserver {
           parent,
           entries,
           embed,
+          groupId: getTranslatableElementKey(item),
         };
       }
     }
@@ -597,7 +621,7 @@ export class MessageTranslationObserver {
           }
         } else {
           const blockTranslations = await translateMessageBatch(
-            plan.entries.filter(({ send }) => send).map(({ id, block }) => ({ id, content: block.text })),
+            plan.entries.filter(({ send }) => send).map(({ id, block }) => ({ id, content: block.text, groupId: plan.groupId })),
             settings.targetLanguage
           );
           const translatedBlocks = plan.entries.map((entry) => resolveBlock(entry, blockTranslations, plan.embed || Boolean(plan.bilingual)));
