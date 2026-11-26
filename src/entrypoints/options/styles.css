@@ -18,7 +18,7 @@ body.basa-options {
   box-shadow: none;
 }
 .basa-options :is(.select, .input, .textarea) {
-  background: var(--basa-control);
+  background-color: var(--basa-control);
   color: var(--basa-ink);
   border-color: var(--basa-line);
 }
@@ -26,3 +26,16 @@ body.basa-options {
   outline: 2px solid var(--basa-accent);
   outline-offset: 1px;
 }
+
+.basa-options .select { appearance: auto; background-image: none; padding-right: 12px; }
+.basa-option-field { display: grid; gap: 6px; min-width: 0; }
+.basa-connection-details {
+  padding: 10px 12px;
+  border: 1px solid var(--basa-line);
+  border-radius: 12px;
+  background: var(--basa-control);
+}
+.basa-connection-details > summary { cursor: pointer; }
+.basa-connection-details[open] > summary { margin-bottom: 8px; }
+.basa-ai-connections { min-width: 0; }
+.basa-options [hidden] { display: none !important; }

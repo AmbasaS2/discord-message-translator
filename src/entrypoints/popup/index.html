@@ -20,7 +20,19 @@
 
   <main class="basa-popup-main">
     <section class="basa-section">
-      <h2 data-i18n="popup_autoTranslate">Auto Translate</h2>
+      <h2 data-i18n="basa_incoming">Incoming translation</h2>
+      <label class="basa-field" for="incomingProvider">
+        <span data-i18n="basa_incomingProvider">Incoming translation provider</span>
+        <select id="incomingProvider"><option value="chrome-builtin" data-i18n="options_chromeBuiltinFree">Chrome built-in (free)</option>
+          <option value="google" data-i18n="options_providerGoogle">Google Translate</option>
+          <option value="deepl" data-i18n="options_providerDeepl">DeepL</option>
+          <option value="openai" data-i18n="basa_providerAI">AI API (NanoGPT / OpenAI / OpenRouter)</option>
+        </select>
+      </label>
+      <label class="basa-field" id="incomingConnectionField" for="incomingOpenaiPresetId" hidden>
+        <span data-i18n="basa_connectionModel">AI connection / model</span>
+        <select id="incomingOpenaiPresetId"></select>
+      </label>
       <label class="basa-field" for="targetLanguage">
         <span data-i18n="popup_targetLanguage">Target Language</span>
         <select id="targetLanguage"></select>
@@ -49,16 +61,21 @@
         <select id="draftProvider">
           <option value="chrome-builtin" data-i18n="options_chromeBuiltinFree">Chrome built-in (free)</option>
           <option value="inherit" data-i18n="basa_inherit">Same as incoming</option>
-          <option value="openai" data-i18n="options_providerOpenai">OpenAI Compatible</option>
+          <option value="openai" data-i18n="basa_providerAI">AI API (NanoGPT / OpenAI / OpenRouter)</option>
           <option value="google" data-i18n="options_providerGoogle">Google Translate</option>
           <option value="deepl" data-i18n="options_providerDeepl">DeepL</option>
         </select>
       </label>
-      <select id="draftOpenaiPresetId" aria-label="Draft OpenAI preset"></select>
+      <label class="basa-field" id="draftConnectionField" for="draftOpenaiPresetId" hidden>
+        <span data-i18n="basa_connectionModel">AI connection / model</span>
+        <select id="draftOpenaiPresetId"></select>
+      </label>
       <p class="basa-hint" data-i18n="basa_draftHint">Drafts are translated only when you press the button. Non-local providers send the draft to the configured service. Nothing is sent to Discord automatically.</p>
     </section>
-    <button type="button" id="openOptions" class="basa-options-button" data-i18n="popup_openOptions">Open settings</button>
   </main>
+  <footer class="basa-popup-footer">
+    <button type="button" id="openOptions" class="basa-options-button" data-i18n="popup_openOptions">Open settings</button>
+  </footer>
   <div id="toast" class="toast toast-top toast-end z-50">
     <div id="toastAlert" class="alert alert-success shadow-lg hidden py-2 px-3">
       <span id="toastText" class="text-sm"></span>

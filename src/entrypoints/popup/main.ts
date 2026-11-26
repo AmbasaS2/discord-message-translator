@@ -1,88 +1,95 @@
+
 import { getSettings } from '@/lib/utils/settings';
+import { getActiveOpenaiPreset } from '@/lib/utils/openai-presets';
+import { populateAiConnections, updateAiProviderLabel } from '@/lib/ui/ai-connections';
 import { populateLanguageSelect } from '@/lib/utils/dom-helpers';
 import { applyI18n, t } from '@/lib/utils/i18n';
 import { showToast } from '@/lib/ui/toast';
-import { createAutoSaver } from '@/lib/ui/auto-save';
+import type { Settings } from '@/types/settings';
 import './styles.css';
 
-// DOM elements
 const autoTranslateToggle = document.getElementById('autoTranslate') as HTMLInputElement;
 const targetLanguageSelect = document.getElementById('targetLanguage') as HTMLSelectElement;
 const translationModeSelect = document.getElementById('translationMode') as HTMLSelectElement;
 const openOptionsButton = document.getElementById('openOptions') as HTMLButtonElement;
+const incomingProvider = document.getElementById('incomingProvider') as HTMLSelectElement;
+const incomingPreset = document.getElementById('incomingOpenaiPresetId') as HTMLSelectElement;
+const incomingField = document.getElementById('incomingConnectionField') as HTMLElement;
 const draftEnabled = document.getElementById('draftEnabled') as HTMLInputElement;
 const draftTarget = document.getElementById('draftTargetLanguage') as HTMLSelectElement;
 const draftProvider = document.getElementById('draftProvider') as HTMLSelectElement;
 const draftPreset = document.getElementById('draftOpenaiPresetId') as HTMLSelectElement;
+const draftField = document.getElementById('draftConnectionField') as HTMLElement;
 const surfaceKeys = ['translateNavigation', 'translateForum', 'translateSearch'] as const;
+let current: Settings | null = null;
 
-const autoSave = createAutoSaver((error) => {
-  console.error('[Popup] Failed to save settings:', error);
-  showToast(t('status_saveFailed'), 'error');
-});
+// These are discrete controls, so persist immediately before the popup can close.
+function save(updates: Partial<Settings>): void {
+  if (current) current = { ...current, ...updates };
+  void chrome.storage.local.set(updates).catch((error) => {
+    console.error('[Popup] Failed to save settings:', error);
+    showToast(t('status_saveFailed'), 'error');
+  });
+}
 
-// Apply i18n to static elements
+function updateConnectionVisibility(): void {
+  if (!current) return;
+  incomingField.hidden = incomingProvider.value !== 'openai';
+  draftField.hidden = draftProvider.value !== 'openai';
+  const fallback = getActiveOpenaiPreset(current);
+  updateAiProviderLabel(incomingProvider, current.openaiPresets, incomingPreset.value, fallback);
+  updateAiProviderLabel(draftProvider, current.openaiPresets, draftPreset.value, fallback);
+}
+
 applyI18n();
 
-// Load settings and reflect in UI
 async function loadSettings() {
   populateLanguageSelect(targetLanguageSelect);
   populateLanguageSelect(draftTarget);
   const settings = await getSettings();
-
+  current = settings;
   autoTranslateToggle.checked = settings.autoTranslate;
   targetLanguageSelect.value = settings.targetLanguage;
   translationModeSelect.value = settings.translationMode;
+  incomingProvider.value = settings.translationProvider;
   draftEnabled.checked = settings.draftEnabled;
   draftTarget.value = settings.draftTargetLanguage;
   draftProvider.value = settings.draftProvider;
-  draftPreset.replaceChildren(new Option(t('basa_currentPreset'), ''));
-  settings.openaiPresets.forEach((preset) => draftPreset.add(new Option(preset.name, preset.id)));
-  draftPreset.value = settings.draftOpenaiPresetId ?? '';
-  draftPreset.disabled = draftProvider.value !== 'openai';
+  populateAiConnections(incomingPreset, settings, 'incoming');
+  populateAiConnections(draftPreset, settings, 'draft');
+  updateConnectionVisibility();
   for (const key of surfaceKeys) {
     (document.getElementById(key) as HTMLInputElement).checked = settings[key];
   }
 }
 
-// --- Event Listeners ---
-
-// Auto Translate toggle
 autoTranslateToggle.addEventListener('change', () => {
-  autoSave({ autoTranslate: autoTranslateToggle.checked });
-  showToast(
-    autoTranslateToggle.checked
-      ? t('status_autoTranslateEnabled')
-      : t('status_autoTranslateDisabled')
-  );
+  save({ autoTranslate: autoTranslateToggle.checked });
+  showToast(autoTranslateToggle.checked ? t('status_autoTranslateEnabled') : t('status_autoTranslateDisabled'));
 });
-
-// Target Language change
-targetLanguageSelect.addEventListener('change', () => {
-  autoSave({ targetLanguage: targetLanguageSelect.value });
+targetLanguageSelect.addEventListener('change', () => save({ targetLanguage: targetLanguageSelect.value }));
+translationModeSelect.addEventListener('change', () => save({ translationMode: translationModeSelect.value as Settings['translationMode'] }));
+incomingProvider.addEventListener('change', () => {
+  save({ translationProvider: incomingProvider.value as Settings['translationProvider'] });
+  updateConnectionVisibility();
 });
-
-// Translation Mode change
-translationModeSelect.addEventListener('change', () => {
-  autoSave({ translationMode: translationModeSelect.value as 'replace' | 'append' });
+incomingPreset.addEventListener('change', () => {
+  save({ activeOpenaiPresetId: incomingPreset.value || null });
+  updateConnectionVisibility();
 });
-
-draftEnabled.addEventListener('change', () => autoSave({ draftEnabled: draftEnabled.checked }));
-draftTarget.addEventListener('change', () => autoSave({ draftTargetLanguage: draftTarget.value }));
+draftEnabled.addEventListener('change', () => save({ draftEnabled: draftEnabled.checked }));
+draftTarget.addEventListener('change', () => save({ draftTargetLanguage: draftTarget.value }));
 draftProvider.addEventListener('change', () => {
-  draftPreset.disabled = draftProvider.value !== 'openai';
-  autoSave({ draftProvider: draftProvider.value as 'inherit' | 'chrome-builtin' | 'google' | 'deepl' | 'openai' });
+  save({ draftProvider: draftProvider.value as Settings['draftProvider'] });
+  updateConnectionVisibility();
 });
-draftPreset.addEventListener('change', () => autoSave({ draftOpenaiPresetId: draftPreset.value || null }));
+draftPreset.addEventListener('change', () => {
+  save({ draftOpenaiPresetId: draftPreset.value || null });
+  updateConnectionVisibility();
+});
 for (const key of surfaceKeys) {
   const input = document.getElementById(key) as HTMLInputElement;
-  input.addEventListener('change', () => autoSave({ [key]: input.checked }));
+  input.addEventListener('change', () => save({ [key]: input.checked }));
 }
-
-// Open Options
-openOptionsButton.addEventListener('click', () => {
-  chrome.runtime.openOptionsPage();
-});
-
-// Initialize
-loadSettings();
+openOptionsButton.addEventListener('click', () => chrome.runtime.openOptionsPage());
+void loadSettings();

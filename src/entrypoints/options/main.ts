@@ -1,5 +1,9 @@
 import type { AvailabilityStatus } from '@/lib/api/chrome-builtin';
-import { getSettings } from '@/lib/utils/settings';
+import { getSettings, updateSettings } from '@/lib/utils/settings';
+import { getActiveOpenaiPreset } from '@/lib/utils/openai-presets';
+import { populateAiConnections, updateAiProviderLabel } from '@/lib/ui/ai-connections';
+import { DEFAULT_DRAFT_TRANSLATION_PROMPT } from '@/lib/api/translation-prompts';
+import type { Settings } from '@/types/settings';
 import { createStorage } from '@/lib/cache/factory';
 import { populateLanguageSelect, setupPasswordToggle } from '@/lib/utils/dom-helpers';
 import { applyI18n, t } from '@/lib/utils/i18n';
@@ -20,14 +24,22 @@ const skipTargetLanguageToggle = document.getElementById('skipTargetLanguage') a
 const languageDetectorHint = document.getElementById('languageDetectorHint') as HTMLLabelElement;
 const translatorApiStatusBadge = document.getElementById('translatorApiStatus') as HTMLSpanElement;
 const languageDetectorApiStatusBadge = document.getElementById('languageDetectorApiStatus') as HTMLSpanElement;
-const googleApiKeySection = document.getElementById('googleApiKeySection') as HTMLDivElement;
 const googleApiKeyInput = document.getElementById('googleApiKey') as HTMLInputElement;
 const toggleGoogleApiKeyVisibility = document.getElementById('toggleGoogleApiKeyVisibility') as HTMLButtonElement;
-const deeplApiKeySection = document.getElementById('deeplApiKeySection') as HTMLDivElement;
 const deeplApiKeyInput = document.getElementById('deeplApiKey') as HTMLInputElement;
 const toggleDeeplApiKeyVisibility = document.getElementById('toggleDeeplApiKeyVisibility') as HTMLButtonElement;
-const openaiApiSection = document.getElementById('openaiApiSection') as HTMLDivElement;
 const chromeBuiltinSection = document.getElementById('chromeBuiltinSection') as HTMLDivElement;
+const incomingPreset = document.getElementById('incomingOpenaiPresetId') as HTMLSelectElement;
+const incomingField = document.getElementById('incomingConnectionField') as HTMLElement;
+const draftEnabled = document.getElementById('draftEnabled') as HTMLInputElement;
+const draftTarget = document.getElementById('draftTargetLanguage') as HTMLSelectElement;
+const draftProvider = document.getElementById('draftProvider') as HTMLSelectElement;
+const draftPreset = document.getElementById('draftOpenaiPresetId') as HTMLSelectElement;
+const draftField = document.getElementById('draftConnectionField') as HTMLElement;
+const promptInput = document.getElementById('draftTranslationPrompt') as HTMLTextAreaElement;
+const savePromptButton = document.getElementById('saveDraftPrompt') as HTMLButtonElement;
+const resetPromptButton = document.getElementById('resetDraftPrompt') as HTMLButtonElement;
+let current: Settings | null = null;
 const cacheTTLDaysInput = document.getElementById('cacheTTLDays') as HTMLInputElement;
 const cacheTTLValue = document.getElementById('cacheTTLValue') as HTMLSpanElement;
 const cacheUsageProgress = document.getElementById('cacheUsageProgress') as HTMLProgressElement;
@@ -46,12 +58,27 @@ const autoSave = createAutoSaver((error) => {
 // Apply i18n to static elements
 applyI18n();
 
-// Update provider-specific API section visibility
+// Connection management remains available regardless of either engine.
 function updateApiSectionVisibility(provider: string) {
-  googleApiKeySection.classList.toggle('hidden', provider !== 'google');
-  deeplApiKeySection.classList.toggle('hidden', provider !== 'deepl');
-  openaiApiSection.classList.toggle('hidden', provider !== 'openai');
   chromeBuiltinSection.classList.toggle('hidden', provider !== 'chrome-builtin');
+  incomingField.classList.toggle('hidden', provider !== 'openai');
+  draftField.classList.toggle('hidden', draftProvider.value !== 'openai');
+  if (!current) return;
+  const fallback = getActiveOpenaiPreset(current);
+  updateAiProviderLabel(translationProviderSelect, current.openaiPresets, incomingPreset.value, fallback);
+  updateAiProviderLabel(draftProvider, current.openaiPresets, draftPreset.value, fallback);
+}
+
+function refreshConnections(settings: Settings): void {
+  current = { ...settings };
+  populateAiConnections(incomingPreset, settings, 'incoming');
+  populateAiConnections(draftPreset, settings, 'draft');
+  updateApiSectionVisibility(translationProviderSelect.value);
+}
+
+function saveEngineChange(updates: Partial<Settings>): void {
+  if (current) current = { ...current, ...updates };
+  void updateSettings(updates).catch(() => showToast(t('status_saveFailed'), 'error'));
 }
 
 // Maps a LanguageDetector availability status to its localized label.
@@ -110,7 +137,9 @@ async function checkLanguageDetectorAvailability(): Promise<void> {
 // Load settings and reflect in UI
 async function loadSettings() {
   populateLanguageSelect(targetLanguageSelect);
+  populateLanguageSelect(draftTarget);
   const settings = await getSettings();
+  current = settings;
 
   await checkChromeBuiltinAvailability();
   await checkLanguageDetectorAvailability();
@@ -123,7 +152,12 @@ async function loadSettings() {
   translationModeSelect.value = settings.translationMode;
   googleApiKeyInput.value = settings.apiKeys.google || '';
   deeplApiKeyInput.value = settings.apiKeys.deepl || '';
-  setupOpenaiPresetEditor(settings);
+  draftEnabled.checked = settings.draftEnabled;
+  draftTarget.value = settings.draftTargetLanguage;
+  draftProvider.value = settings.draftProvider;
+  promptInput.value = settings.draftTranslationPrompt.trim() || DEFAULT_DRAFT_TRANSLATION_PROMPT;
+  refreshConnections(settings);
+  setupOpenaiPresetEditor(settings, refreshConnections);
   cacheTTLDaysInput.value = settings.cacheTTLDays.toString();
   updateCacheTTLDisplay(settings.cacheTTLDays);
 
@@ -185,10 +219,33 @@ skipTargetLanguageToggle.addEventListener('change', () => {
 // Translation Provider change
 translationProviderSelect.addEventListener('change', () => {
   const provider = translationProviderSelect.value;
-  autoSave({
-    translationProvider: provider as 'google' | 'deepl' | 'openai' | 'chrome-builtin',
-  });
+  saveEngineChange({ translationProvider: provider as Settings['translationProvider'] });
   updateApiSectionVisibility(provider);
+});
+incomingPreset.addEventListener('change', () => {
+  saveEngineChange({ activeOpenaiPresetId: incomingPreset.value || null });
+  updateApiSectionVisibility(translationProviderSelect.value);
+});
+draftEnabled.addEventListener('change', () => saveEngineChange({ draftEnabled: draftEnabled.checked }));
+draftTarget.addEventListener('change', () => saveEngineChange({ draftTargetLanguage: draftTarget.value }));
+draftProvider.addEventListener('change', () => {
+  saveEngineChange({ draftProvider: draftProvider.value as Settings['draftProvider'] });
+  updateApiSectionVisibility(translationProviderSelect.value);
+});
+draftPreset.addEventListener('change', () => {
+  saveEngineChange({ draftOpenaiPresetId: draftPreset.value || null });
+  updateApiSectionVisibility(translationProviderSelect.value);
+});
+async function storeDraftPrompt(value: string): Promise<void> {
+  try {
+    await updateSettings({ draftTranslationPrompt: value === DEFAULT_DRAFT_TRANSLATION_PROMPT ? '' : value });
+    showToast(t('status_saved'));
+  } catch { showToast(t('status_saveFailed'), 'error'); }
+}
+savePromptButton.addEventListener('click', () => { void storeDraftPrompt(promptInput.value.trim()); });
+resetPromptButton.addEventListener('click', () => {
+  promptInput.value = DEFAULT_DRAFT_TRANSLATION_PROMPT;
+  void storeDraftPrompt('');
 });
 
 // Google API Key input

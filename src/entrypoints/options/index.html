@@ -18,7 +18,7 @@
     <!-- General -->
     <div class="card bg-base-100 shadow-sm">
       <div class="card-body space-y-3">
-        <h2 class="card-title text-base" data-i18n="options_tabGeneral">General</h2>
+        <h2 class="card-title text-base" data-i18n="basa_incoming">Incoming translation</h2>
 
         <label class="label cursor-pointer justify-start gap-3 py-1">
           <input type="checkbox" id="autoTranslate" class="toggle toggle-primary toggle-sm" checked />
@@ -50,7 +50,7 @@
     <!-- Translation Provider -->
     <div class="card bg-base-100 shadow-sm">
       <div class="card-body space-y-3">
-        <h2 class="card-title text-base" data-i18n="options_translationProvider">Translation Provider</h2>
+        <h2 class="card-title text-base" data-i18n="basa_incomingProvider">Incoming translation provider</h2>
 
         <div class="flex flex-col w-full">
           <label class="label py-1">
@@ -60,15 +60,69 @@
             <option value="chrome-builtin" disabled data-i18n="options_chromeBuiltinChecking">Chrome Built-in (Checking...)</option>
             <option value="google" data-i18n="options_providerGoogle">Google Translate</option>
             <option value="deepl" data-i18n="options_providerDeepl">DeepL</option>
-            <option value="openai" data-i18n="options_providerOpenai">OpenAI Compatible</option>
+            <option value="openai" data-i18n="basa_providerAI">AI API (NanoGPT / OpenAI / OpenRouter)</option>
           </select>
           <label class="label py-0" id="chromeBuiltinHint" style="display: none;">
             <span class="text-warning text-xs" data-i18n="options_chromeBuiltinHint">Chrome Built-in requires Chrome 138+ with Translator API enabled</span>
           </label>
         </div>
 
+
+        <div id="incomingConnectionField" class="flex flex-col gap-1 hidden">
+          <label class="label" for="incomingOpenaiPresetId"><span class="text-sm" data-i18n="basa_connectionModel">AI connection / model</span></label>
+          <select id="incomingOpenaiPresetId" class="select select-sm w-full"></select>
+        </div>
+        <p class="text-xs text-base-content/60" data-i18n="basa_incomingExternalHint">External engines receive visible messages and may incur charges.</p>
+        <!-- Chrome Built-in message -->
+        <div id="chromeBuiltinSection" class="hidden">
+          <div class="alert alert-info py-2 text-xs">
+            <span data-i18n="options_chromeBuiltinFree">Chrome Built-in Translator (Free)</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="card bg-base-100 shadow-sm">
+      <div class="card-body space-y-3">
+        <h2 class="card-title text-base" data-i18n="basa_draft">Outgoing draft translation</h2>
+        <label class="label cursor-pointer justify-between gap-3"><span class="text-sm" data-i18n="basa_draftEnabled">Enable draft translation button</span><input type="checkbox" id="draftEnabled" class="toggle toggle-primary toggle-sm" /></label>
+        <label class="basa-option-field" for="draftTargetLanguage"><span class="text-sm" data-i18n="basa_draftTarget">Draft target language</span><select id="draftTargetLanguage" class="select select-sm w-full"></select></label>
+        <label class="basa-option-field" for="draftProvider"><span class="text-sm" data-i18n="basa_draftProvider">Draft provider</span>
+          <select id="draftProvider" class="select select-sm w-full">
+            <option value="chrome-builtin" data-i18n="options_chromeBuiltinFree">Chrome built-in (free)</option>
+          <option value="google" data-i18n="options_providerGoogle">Google Translate</option>
+          <option value="deepl" data-i18n="options_providerDeepl">DeepL</option>
+          <option value="openai" data-i18n="basa_providerAI">AI API (NanoGPT / OpenAI / OpenRouter)</option>
+            <option value="inherit" data-i18n="basa_inherit">Same as incoming</option>
+          </select>
+        </label>
+        <label id="draftConnectionField" class="basa-option-field hidden" for="draftOpenaiPresetId">
+          <span class="text-sm" data-i18n="basa_connectionModel">AI connection / model</span>
+          <select id="draftOpenaiPresetId" class="select select-sm w-full"></select>
+        </label>
+        <p class="text-xs text-base-content/60" data-i18n="basa_draftHint">Drafts are translated only when you press the button. Non-local providers send the draft to the configured service. Nothing is sent to Discord automatically.</p>
+        <details class="basa-connection-details">
+          <summary class="text-sm font-medium" data-i18n="basa_draftPrompt">Draft AI translation prompt</summary>
+          <div class="space-y-2 pt-3">
+            <p class="text-xs text-base-content/60" data-i18n="basa_draftPromptHint">Customize the AI translation style. Language, source boundaries and output format are always enforced. Specialized translation models may not support custom prompts.</p>
+            <textarea id="draftTranslationPrompt" class="textarea textarea-sm w-full" rows="9" spellcheck="false" aria-label="Draft AI translation prompt"></textarea>
+            <div class="flex justify-end gap-2">
+              <button type="button" id="resetDraftPrompt" class="btn btn-sm btn-ghost" data-i18n="basa_resetPrompt">Reset to default</button>
+              <button type="button" id="saveDraftPrompt" class="btn btn-sm btn-primary" data-i18n="options_save">Save</button>
+            </div>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <div id="apiConnections" class="card bg-base-100 shadow-sm">
+      <div class="card-body space-y-3">
+        <h2 class="card-title text-base" data-i18n="basa_connections">API connections</h2>
+        <p class="text-xs text-base-content/60" data-i18n="basa_connectionsHint">Add connections independently of the incoming and outgoing engines. Select the saved service/model separately for each direction.</p>
         <!-- Google API Key -->
-        <div id="googleApiKeySection" class="space-y-1 hidden">
+        <details class="basa-connection-details"><summary class="text-sm font-medium">Google Translate API</summary>
+        <div id="googleApiKeySection" class="space-y-1">
           <div class="flex items-center justify-between">
             <span class="text-sm font-medium" data-i18n="options_googleTranslateApi">Google Translate API</span>
             <a href="https://cloud.google.com/translate/docs" target="_blank" class="link link-primary text-xs" data-i18n="options_getApiKey">Get API Key</a>
@@ -85,8 +139,10 @@
           <p class="text-xs text-base-content/60" data-i18n="options_apiKeyLocalNote">Your API key is stored locally and never shared</p>
         </div>
 
+        </details>
         <!-- DeepL API Key -->
-        <div id="deeplApiKeySection" class="space-y-1 hidden">
+        <details class="basa-connection-details"><summary class="text-sm font-medium">DeepL API</summary>
+        <div id="deeplApiKeySection" class="space-y-1">
           <div class="flex items-center justify-between">
             <span class="text-sm font-medium" data-i18n="options_deeplApi">DeepL API</span>
             <a href="https://www.deepl.com/pro-api" target="_blank" class="link link-primary text-xs" data-i18n="options_getApiKey">Get API Key</a>
@@ -104,22 +160,21 @@
           <p class="text-xs text-base-content/60" data-i18n="options_apiKeyLocalNote">Your API key is stored locally and never shared</p>
         </div>
 
+        </details>
         <!-- OpenAI Section -->
-        <div id="openaiApiSection" class="space-y-2 hidden">
+        <div id="openaiApiSection" class="space-y-2 basa-ai-connections">
           <div class="flex items-center justify-between gap-2">
-            <span class="text-sm font-medium" data-i18n="options_openaiCompatibleApi">OpenAI Compatible API</span>
+            <span class="text-sm font-medium" data-i18n="basa_aiConnections">AI connections</span>
             <div class="flex items-center gap-3">
-              <a href="https://platform.openai.com/api-keys" target="_blank" class="link link-primary text-xs" data-i18n="options_getApiKey">Get API Key</a>
-              <button type="button" id="addOpenaiPreset" class="btn btn-xs btn-primary" data-i18n="options_addPreset">Add preset</button>
+              <button type="button" id="addOpenaiPreset" class="btn btn-xs btn-primary" data-i18n="basa_addConnection">Add connection</button>
             </div>
           </div>
 
           <ul id="openaiPresetList" class="space-y-1"></ul>
-          <p id="openaiPresetEmpty" class="text-xs text-base-content/60" data-i18n="options_presetEmpty">No presets yet. Add an OpenAI-compatible endpoint to start.</p>
+          <p id="openaiPresetEmpty" class="text-xs text-base-content/60" data-i18n="basa_noConnections">No API connections yet. Add a service and model.</p>
 
           <template id="openaiPresetItemTemplate">
             <li class="flex items-center gap-2 rounded-lg bg-base-200 px-3 py-2">
-              <input type="radio" name="activeOpenaiPreset" class="radio radio-sm radio-primary" />
               <div class="flex min-w-0 flex-1 flex-col">
                 <span data-role="name" class="text-sm font-medium truncate"></span>
                 <span data-role="meta" class="text-xs text-base-content/60 truncate"></span>
@@ -130,6 +185,17 @@
           </template>
 
           <form id="openaiPresetForm" class="hidden space-y-2">
+            <label class="basa-option-field" for="presetService">
+              <span class="text-xs" data-i18n="basa_service">Service</span>
+              <select id="presetService" class="select select-sm w-full">
+                <option value="nano-gpt">NanoGPT</option>
+                <option value="nano-gpt-subscription" data-i18n="basa_serviceNanoSubscription">NanoGPT (Subscription API)</option>
+                <option value="openai">OpenAI</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="custom" data-i18n="basa_serviceCustom">Custom API</option>
+              </select>
+            </label>
+            <p id="nanoBillingHint" class="text-xs text-base-content/60 hidden" data-i18n="basa_nanoBillingHint">The subscription endpoint is separate from the standard billing endpoint. Choose according to your NanoGPT plan and key.</p>
             <div class="flex flex-col w-full">
               <label class="label py-0" for="presetName">
                 <span class="text-xs" data-i18n="options_presetName">Name</span>
@@ -144,16 +210,20 @@
               <p class="text-xs text-base-content/60" data-i18n="options_baseUrlHint">e.g., https://api.openai.com/v1 or custom endpoint</p>
             </div>
             <div class="flex flex-col w-full">
-              <label class="label py-0" for="presetModel">
-                <span class="text-xs" data-i18n="options_model">Model</span>
-              </label>
-              <input type="text" id="presetModel" placeholder="gpt-6-luna" class="input input-sm w-full" />
-              <p class="text-xs text-base-content/60" data-i18n="options_modelHint">Model name as expected by the endpoint</p>
+              <div class="flex items-center justify-between gap-2">
+                <label class="label py-0" for="presetModel"><span class="text-xs" data-i18n="options_model">Model</span></label>
+                <button type="button" id="loadPresetModels" class="btn btn-xs btn-outline" data-i18n="basa_loadModels">Load models</button>
+              </div>
+              <input type="text" id="presetModel" list="presetModelList" class="input input-sm w-full" autocomplete="off" />
+              <datalist id="presetModelList"></datalist>
+              <p id="presetModelsStatus" class="text-xs text-base-content/60" aria-live="polite"></p>
+              <p class="text-xs text-base-content/60" data-i18n="basa_modelHint">Choose a loaded model or type the exact model ID.</p>
             </div>
             <div class="flex flex-col w-full">
-              <label class="label py-0" for="presetApiKey">
-                <span class="text-xs" data-i18n="options_apiKey">API Key</span>
-              </label>
+              <div class="flex items-center justify-between gap-2">
+                <label class="label py-0" for="presetApiKey"><span class="text-xs" data-i18n="options_apiKey">API Key</span></label>
+                <a id="presetKeyLink" href="https://nano-gpt.com/api" target="_blank" rel="noopener noreferrer" class="link link-primary text-xs" data-i18n="options_getApiKey">Get API Key</a>
+              </div>
               <div class="relative">
                 <input type="password" id="presetApiKey" data-i18n-placeholder="options_openaiApiKeyPlaceholder" placeholder="Enter your API key" class="input input-sm w-full pr-10" />
                 <button type="button" id="togglePresetApiKeyVisibility" class="btn btn-xs btn-ghost absolute right-1 top-1">
@@ -184,12 +254,6 @@
           </form>
         </div>
 
-        <!-- Chrome Built-in message -->
-        <div id="chromeBuiltinSection" class="hidden">
-          <div class="alert alert-info py-2 text-xs">
-            <span data-i18n="options_chromeBuiltinFree">Chrome Built-in Translator (Free)</span>
-          </div>
-        </div>
       </div>
     </div>
 

@@ -386,5 +386,76 @@
   },
   "basa_copyFailed": {
     "message": "복사 실패. 미리보기에서 직접 복사하세요."
+  },
+  "basa_incoming": {
+    "message": "수신 번역"
+  },
+  "basa_incomingProvider": {
+    "message": "수신 번역 엔진"
+  },
+  "basa_connectionModel": {
+    "message": "AI 연결 / 모델"
+  },
+  "basa_providerAI": {
+    "message": "AI API (NanoGPT · OpenAI · OpenRouter)"
+  },
+  "basa_noConnections": {
+    "message": "등록된 AI 연결이 없어요. 상세 설정에서 추가하세요."
+  },
+  "basa_missingConnection": {
+    "message": "삭제된 연결 — 다른 연결을 선택하세요"
+  },
+  "basa_connections": {
+    "message": "API 연결 관리"
+  },
+  "basa_connectionsHint": {
+    "message": "수신·발신 엔진과 별도로 API 연결을 관리합니다. 각 방향에서 사용할 서비스와 모델을 선택하세요."
+  },
+  "basa_aiConnections": {
+    "message": "AI 연결"
+  },
+  "basa_addConnection": {
+    "message": "연결 추가"
+  },
+  "basa_service": {
+    "message": "서비스"
+  },
+  "basa_serviceCustom": {
+    "message": "사용자 지정 API"
+  },
+  "basa_serviceNanoSubscription": {
+    "message": "NanoGPT (구독 전용 API)"
+  },
+  "basa_nanoBillingHint": {
+    "message": "NanoGPT 일반 API와 구독 전용 API는 주소가 달라요. 사용하는 키와 결제 방식에 맞게 선택하세요."
+  },
+  "basa_loadModels": {
+    "message": "모델 불러오기"
+  },
+  "basa_modelHint": {
+    "message": "불러온 모델을 선택하거나 정확한 모델 ID를 직접 입력하세요."
+  },
+  "basa_modelsLoaded": {
+    "message": "모델 $COUNT$개를 불러왔어요. 선택하거나 검색해 보세요.",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "basa_modelsFailed": {
+    "message": "모델을 불러오지 못했어요. 모델 ID를 직접 입력할 수 있어요."
+  },
+  "basa_incomingExternalHint": {
+    "message": "외부 엔진을 사용하면 화면에 표시된 메시지가 해당 서비스로 전달되며 요금이 발생할 수 있어요."
+  },
+  "basa_draftPrompt": {
+    "message": "발신 AI 번역 프롬프트"
+  },
+  "basa_draftPromptHint": {
+    "message": "AI 번역 스타일을 수정할 수 있어요. 대상 언어, 원문 범위, 출력 형식은 항상 유지됩니다. 일부 전용 번역 모델은 사용자 프롬프트를 지원하지 않아요."
+  },
+  "basa_resetPrompt": {
+    "message": "기본값 복원"
   }
 }

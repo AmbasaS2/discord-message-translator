@@ -2,12 +2,13 @@ import { OpenAICompatibleClient, parseExtraBody } from '@/lib/api/openai-compati
 import { requestCompletionViaBackground } from '@/lib/api/openai-background';
 import {
   endpointOriginPattern,
-  getActiveOpenaiPreset,
   removeOpenaiPreset,
   upsertOpenaiPreset,
   type PresetState,
 } from '@/lib/utils/openai-presets';
 import { getSettings, updateSettings } from '@/lib/utils/settings';
+import { API_SERVICES, inferApiService, fetchModelIds, normalizeModelBaseUrl, type ApiService } from '@/lib/utils/api-services';
+import { serviceLabel } from '@/lib/ui/ai-connections';
 import { setupPasswordToggle } from '@/lib/utils/dom-helpers';
 import { applyI18n, t } from '@/lib/utils/i18n';
 import type { OpenAIPreset, Settings } from '@/types/settings';
@@ -28,6 +29,14 @@ const testResult = document.getElementById('presetTestResult') as HTMLParagraphE
 const testButton = document.getElementById('testOpenaiPreset') as HTMLButtonElement;
 const cancelButton = document.getElementById('cancelOpenaiPreset') as HTMLButtonElement;
 const saveButton = document.getElementById('saveOpenaiPreset') as HTMLButtonElement;
+const serviceSelect = document.getElementById('presetService') as HTMLSelectElement;
+const keyLink = document.getElementById('presetKeyLink') as HTMLAnchorElement;
+const billingHint = document.getElementById('nanoBillingHint') as HTMLElement;
+const modelsButton = document.getElementById('loadPresetModels') as HTMLButtonElement;
+const modelList = document.getElementById('presetModelList') as HTMLDataListElement;
+const modelsStatus = document.getElementById('presetModelsStatus') as HTMLElement;
+let modelRequest: AbortController | null = null;
+let connectionsChanged: ((settings: Settings) => void) | undefined;
 
 let state: PresetState = { openaiPresets: [], activeOpenaiPresetId: null };
 // Id of the preset in the form; null while the form is closed.
@@ -75,24 +84,14 @@ function render(): void {
   listElement.classList.toggle('hidden', editing);
   emptyElement.classList.toggle('hidden', editing || state.openaiPresets.length > 0);
 
-  const activeId = getActiveOpenaiPreset(state)?.id;
   listElement.replaceChildren();
   for (const preset of state.openaiPresets) {
     const li = (itemTemplate.content.cloneNode(true) as DocumentFragment).firstElementChild as HTMLLIElement;
     // Templates are skipped by the page-level applyI18n call.
     applyI18n(li);
 
-    const radio = li.querySelector('input[type="radio"]') as HTMLInputElement;
-    radio.checked = preset.id === activeId;
-    radio.setAttribute('aria-label', preset.name);
-    radio.addEventListener('change', async () => {
-      if (!radio.checked) return;
-      state = { ...state, activeOpenaiPresetId: preset.id };
-      await updateSettings({ activeOpenaiPresetId: preset.id });
-    });
-
     (li.querySelector('[data-role="name"]') as HTMLElement).textContent = preset.name;
-    (li.querySelector('[data-role="meta"]') as HTMLElement).textContent = `${preset.model} · ${preset.baseUrl}`;
+    (li.querySelector('[data-role="meta"]') as HTMLElement).textContent = `${serviceLabel(inferApiService(preset.baseUrl))} · ${preset.model} · ${preset.baseUrl}`;
 
     li.querySelector('[data-role="edit"]')!.addEventListener('click', () => openForm(preset));
     li.querySelector('[data-role="delete"]')!.addEventListener('click', async () => {
@@ -101,6 +100,7 @@ function render(): void {
       await updateSettings(next);
       state = next;
       render();
+      connectionsChanged?.(await getSettings());
     });
 
     listElement.appendChild(li);
@@ -113,8 +113,11 @@ function validate(): void {
   extraBodyError.classList.toggle('hidden', parsed.ok);
   extraBodyInput.classList.toggle('textarea-error', !parsed.ok);
 
+  let validUrl = false;
+  try { normalizeModelBaseUrl(baseUrlInput.value); validUrl = true; } catch { /* still editing */ }
+  modelsButton.disabled = !validUrl || modelRequest !== null;
   const valid =
-    parsed.ok &&
+    parsed.ok && validUrl &&
     nameInput.value.trim() !== '' &&
     baseUrlInput.value.trim() !== '' &&
     modelInput.value.trim() !== '';
@@ -122,25 +125,47 @@ function validate(): void {
   testButton.disabled = !valid;
 }
 
+function clearModelList(): void {
+  modelRequest?.abort();
+  modelRequest = null;
+  modelList.replaceChildren();
+  modelsStatus.textContent = '';
+}
+
+function showServiceLink(): void {
+  const service = inferApiService(baseUrlInput.value);
+  const metadata = API_SERVICES[service];
+  keyLink.hidden = !metadata.keyUrl;
+  if (metadata.keyUrl) keyLink.href = metadata.keyUrl;
+  else keyLink.removeAttribute('href');
+  billingHint.classList.toggle('hidden', service !== 'nano-gpt' && service !== 'nano-gpt-subscription');
+}
+
 function openForm(preset?: OpenAIPreset): void {
+  clearModelList();
   editingId = preset?.id ?? crypto.randomUUID();
-  nameInput.value = preset?.name ?? '';
-  baseUrlInput.value = preset?.baseUrl ?? '';
+  const service = preset ? inferApiService(preset.baseUrl) : 'nano-gpt';
+  serviceSelect.value = service;
+  nameInput.value = preset?.name ?? serviceLabel(service);
+  baseUrlInput.value = preset?.baseUrl ?? API_SERVICES[service].baseUrl;
   modelInput.value = preset?.model ?? '';
   apiKeyInput.value = preset?.apiKey ?? '';
   apiKeyInput.type = 'password';
   extraBodyInput.value = preset?.extraBody ?? '';
   showTestResult('', null);
+  showServiceLink();
   validate();
   render();
 }
 
 function closeForm(): void {
+  clearModelList();
   editingId = null;
   render();
 }
 
-export function setupOpenaiPresetEditor(settings: Settings): void {
+export function setupOpenaiPresetEditor(settings: Settings, onChange?: (settings: Settings) => void): void {
+  connectionsChanged = onChange;
   state = {
     openaiPresets: settings.openaiPresets,
     activeOpenaiPresetId: settings.activeOpenaiPresetId,
@@ -152,9 +177,64 @@ addButton.addEventListener('click', () => openForm());
 cancelButton.addEventListener('click', closeForm);
 setupPasswordToggle(toggleApiKeyVisibility, apiKeyInput);
 
-for (const input of [nameInput, baseUrlInput, modelInput, apiKeyInput, extraBodyInput]) {
-  input.addEventListener('input', validate);
-}
+for (const input of [nameInput, modelInput, extraBodyInput]) input.addEventListener('input', validate);
+apiKeyInput.addEventListener('input', () => { clearModelList(); validate(); });
+baseUrlInput.addEventListener('input', () => {
+  clearModelList();
+  serviceSelect.value = inferApiService(baseUrlInput.value);
+  showServiceLink();
+  validate();
+});
+serviceSelect.addEventListener('change', () => {
+  const service = serviceSelect.value as ApiService;
+  const previous = inferApiService(baseUrlInput.value);
+  const next = API_SERVICES[service];
+  if (!nameInput.value.trim() || nameInput.value === serviceLabel(previous)) nameInput.value = serviceLabel(service);
+  const oldOrigin = endpointOriginPattern(baseUrlInput.value);
+  const newOrigin = endpointOriginPattern(next.baseUrl);
+  if (oldOrigin !== newOrigin) apiKeyInput.value = '';
+  baseUrlInput.value = next.baseUrl;
+  modelInput.value = '';
+  clearModelList();
+  showServiceLink();
+  validate();
+});
+
+modelsButton.addEventListener('click', async () => {
+  if (editingId === null || modelRequest) return;
+  const id = editingId;
+  const baseUrl = baseUrlInput.value.trim();
+  const apiKey = apiKeyInput.value;
+  if (!(await requestEndpointAccess(baseUrl))) {
+    modelsStatus.textContent = t('options_testPermissionDenied');
+    return;
+  }
+  if (editingId !== id || baseUrlInput.value.trim() !== baseUrl || apiKeyInput.value !== apiKey || modelRequest) return;
+  const controller = new AbortController();
+  modelRequest = controller;
+  modelsStatus.textContent = t('options_loading');
+  validate();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const ids = await fetchModelIds(baseUrl, apiKey, controller.signal);
+    if (editingId !== id || modelRequest !== controller) return;
+    const fragment = document.createDocumentFragment();
+    for (const model of ids) fragment.appendChild(new Option(model, model));
+    modelList.replaceChildren(fragment);
+    modelsStatus.textContent = t('basa_modelsLoaded', [String(ids.length)]);
+    modelInput.focus();
+  } catch (error) {
+    if (editingId === id && modelRequest === controller) {
+      modelsStatus.textContent = `${t('basa_modelsFailed')} ${error instanceof Error ? error.message : String(error)}`;
+    }
+  } finally {
+    clearTimeout(timer);
+    if (modelRequest === controller) {
+      modelRequest = null;
+      validate();
+    }
+  }
+});
 
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -167,6 +247,7 @@ form.addEventListener('submit', async (event) => {
   await updateSettings(next);
   state = next;
   closeForm();
+  connectionsChanged?.(await getSettings());
 });
 
 testButton.addEventListener('click', async () => {

@@ -5,11 +5,9 @@
   "extensionDescription": {
     "message": "Google翻訳、DeepL、OpenAI互換APIを使ってDiscordメッセージを自動翻訳"
   },
-
   "common_modeReplace": {
     "message": "原文を置換"
   },
-
   "popup_title": {
     "message": "Discord 翻訳"
   },
@@ -28,7 +26,6 @@
   "popup_openOptions": {
     "message": "設定を開く"
   },
-
   "status_autoTranslateEnabled": {
     "message": "自動翻訳を有効にしました"
   },
@@ -62,17 +59,17 @@
   "status_cacheClearFailed": {
     "message": "キャッシュの削除に失敗しました"
   },
-
   "confirm_clearCache": {
     "message": "キャッシュされた翻訳をすべて削除しますか？"
   },
   "confirm_deletePreset": {
     "message": "プリセット「$NAME$」を削除しますか？",
     "placeholders": {
-      "name": { "content": "$1" }
+      "name": {
+        "content": "$1"
+      }
     }
   },
-
   "options_subtitle": {
     "message": "翻訳の設定を行います"
   },
@@ -211,7 +208,9 @@
   "options_extraBodyInvalid": {
     "message": "JSON が不正なため保存していません: $ERROR$",
     "placeholders": {
-      "error": { "content": "$1" }
+      "error": {
+        "content": "$1"
+      }
     }
   },
   "options_addPreset": {
@@ -250,7 +249,9 @@
   "options_testOk": {
     "message": "接続成功: $RESULT$",
     "placeholders": {
-      "result": { "content": "$1" }
+      "result": {
+        "content": "$1"
+      }
     }
   },
   "options_testPermissionDenied": {
@@ -265,13 +266,17 @@
   "options_cacheTTLDay": {
     "message": "$DAYS$日",
     "placeholders": {
-      "days": { "content": "$1" }
+      "days": {
+        "content": "$1"
+      }
     }
   },
   "options_cacheTTLDays": {
     "message": "$DAYS$日",
     "placeholders": {
-      "days": { "content": "$1" }
+      "days": {
+        "content": "$1"
+      }
     }
   },
   "options_cacheUsage": {
@@ -309,5 +314,79 @@
   },
   "options_openaiApiKeyPlaceholder": {
     "message": "APIキーを入力"
+  },
+  "basa_incoming": {
+    "message": "受信翻訳"
+  },
+  "basa_incomingProvider": {
+    "message": "受信翻訳エンジン"
+  },
+  "basa_connectionModel": {
+    "message": "AI 接続 / モデル"
+  },
+  "basa_providerAI": {
+    "message": "AI API (NanoGPT / OpenAI / OpenRouter)"
+  },
+  "basa_noConnections": {
+    "message": "AI 接続がありません。詳細設定で追加してください。"
+  },
+  "basa_missingConnection": {
+    "message": "削除済みの接続 — 別の接続を選択"
+  },
+  "basa_connections": {
+    "message": "API 接続管理"
+  },
+  "basa_connectionsHint": {
+    "message": "受信・送信エンジンとは別に接続を管理し、それぞれにサービスとモデルを選択します。"
+  },
+  "basa_aiConnections": {
+    "message": "AI 接続"
+  },
+  "basa_addConnection": {
+    "message": "接続を追加"
+  },
+  "basa_service": {
+    "message": "サービス"
+  },
+  "basa_serviceCustom": {
+    "message": "カスタム API"
+  },
+  "basa_serviceNanoSubscription": {
+    "message": "NanoGPT (サブスクリプション API)"
+  },
+  "basa_nanoBillingHint": {
+    "message": "NanoGPT の通常 API とサブスクリプション API は異なるため、契約とキーに合う方を選択してください。"
+  },
+  "basa_loadModels": {
+    "message": "モデル一覧取得"
+  },
+  "basa_modelHint": {
+    "message": "取得したモデルを選択するか、正確なモデル ID を入力してください。"
+  },
+  "basa_modelsLoaded": {
+    "message": "$COUNT$ 件のモデルを取得しました。選択または入力してください。",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "basa_modelsFailed": {
+    "message": "モデル一覧を取得できませんでした。モデル ID を手入力できます。"
+  },
+  "basa_incomingExternalHint": {
+    "message": "外部エンジンは表示中のメッセージをサービスへ送信し、料金が発生する場合があります。"
+  },
+  "basa_draftPrompt": {
+    "message": "送信 AI 翻訳プロンプト"
+  },
+  "basa_draftPromptHint": {
+    "message": "翻訳スタイルを変更できます。対象言語、原文の範囲、出力形式は常に維持されます。専用翻訳モデルはカスタムプロンプトをサポートしない場合があります。"
+  },
+  "basa_resetPrompt": {
+    "message": "初期値に戻す"
+  },
+  "basa_currentPreset": {
+    "message": "受信で選択した接続"
   }
 }

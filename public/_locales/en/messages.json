@@ -386,5 +386,76 @@
   },
   "basa_copyFailed": {
     "message": "Copy failed. Select the preview manually."
+  },
+  "basa_incoming": {
+    "message": "Incoming translation"
+  },
+  "basa_incomingProvider": {
+    "message": "Incoming translation engine"
+  },
+  "basa_connectionModel": {
+    "message": "AI connection / model"
+  },
+  "basa_providerAI": {
+    "message": "AI API (NanoGPT / OpenAI / OpenRouter)"
+  },
+  "basa_noConnections": {
+    "message": "No API connections yet. Add a service and model in settings."
+  },
+  "basa_missingConnection": {
+    "message": "Connection removed — choose another"
+  },
+  "basa_connections": {
+    "message": "API connections"
+  },
+  "basa_connectionsHint": {
+    "message": "Manage connections independently of the incoming and outgoing engines. Choose a saved service/model for each direction."
+  },
+  "basa_aiConnections": {
+    "message": "AI connections"
+  },
+  "basa_addConnection": {
+    "message": "Add connection"
+  },
+  "basa_service": {
+    "message": "Service"
+  },
+  "basa_serviceCustom": {
+    "message": "Custom API"
+  },
+  "basa_serviceNanoSubscription": {
+    "message": "NanoGPT (Subscription API)"
+  },
+  "basa_nanoBillingHint": {
+    "message": "NanoGPT has separate standard and subscription API endpoints. Choose the endpoint appropriate for your key and billing plan."
+  },
+  "basa_loadModels": {
+    "message": "Load models"
+  },
+  "basa_modelHint": {
+    "message": "Choose a loaded model or enter the exact model ID."
+  },
+  "basa_modelsLoaded": {
+    "message": "$COUNT$ models loaded. Select or type a model.",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "basa_modelsFailed": {
+    "message": "Could not load models. You can enter the model ID manually."
+  },
+  "basa_incomingExternalHint": {
+    "message": "External engines receive visible messages and may incur charges."
+  },
+  "basa_draftPrompt": {
+    "message": "Outgoing AI translation prompt"
+  },
+  "basa_draftPromptHint": {
+    "message": "Customize the AI translation style. The target language, source boundary and response format remain mandatory. Specialized translation models may not support custom prompts."
+  },
+  "basa_resetPrompt": {
+    "message": "Reset to default"
   }
 }
