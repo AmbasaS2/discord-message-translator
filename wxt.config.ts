@@ -4,7 +4,7 @@ export default defineConfig({
   srcDir: 'src',
   manifest: {
     name: 'Discord Message Translator · Basa',
-    version: '2.1.0',
+    version: '2.1.1',
     description: '__MSG_extensionDescription__',
     default_locale: 'en',
     permissions: ['storage', 'alarms'],

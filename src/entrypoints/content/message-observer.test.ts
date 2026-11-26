@@ -106,4 +106,67 @@ describe('MessageTranslationObserver', () => {
     expect(nodes[0]?.querySelector('h2')?.textContent).toBe('Heading');
     expect(nodes[1]?.querySelector(translated)?.textContent).toBe('번역된 문장.');
   });
+
+  it('translates mixed chat and current Discord embeds while preserving rich markup', async () => {
+    const node = message(101, 'Plain message.');
+    node.insertAdjacentHTML('beforeend', `
+      <div id="message-accessories-101">
+        <article class="embedFull_XyW1ZT embed_XyW1ZT">
+          <div class="embedTitle_XyW1ZT">Welcome!</div>
+          <div class="embedDescription_XyW1ZT"><p>First paragraph.</p><p>Second paragraph.</p></div>
+          <div class="embedFieldName_XyW1ZT">Instructions</div>
+          <div class="embedFieldValue_XyW1ZT">
+            <p>Ask <span class="mention" role="button">@Helper</span> or visit <a href="https://example.com/">Help</a>.</p>
+            <ul><li>First step</li><li>Second step</li></ul>
+            <pre><code>do_not_translate()</code></pre>
+            <p>See <img src="/emoji.png" alt="sparkles"> the result.</p>
+          </div>
+          <img class="embedImage_XyW1ZT" src="/banner.png" alt="banner">
+          <span class="embedFooterText_XyW1ZT">Community footer</span>
+        </article>
+      </div>`);
+    document.body.append(node);
+    vi.mocked(translateMessage).mockImplementation(async (_, text) => `번역 ${text}`);
+    vi.mocked(translateMessageBatch).mockImplementation(async (items) => {
+      expect(items.every(({ content }) => !content.includes('do_not_translate'))).toBe(true);
+      return new Map(items.map(({ id, content }) => [id, `번역 ${content.replace(/§([MP])(\d+)§/g, '§ $1 $2 §')}`]));
+    });
+    observer.start();
+    await show(node);
+
+    expect(node.querySelectorAll(translated)).toHaveLength(6);
+    expect(node.querySelector(`[class*="embedDescription"] ${translated}`)?.querySelectorAll('p')).toHaveLength(2);
+    const field = node.querySelector(`[class*="embedFieldValue"] ${translated}`);
+    expect(field?.querySelectorAll('ul > li')).toHaveLength(2);
+    expect(field?.querySelector('pre > code')?.textContent).toBe('do_not_translate()');
+    expect(field?.querySelector('.mention')?.textContent).toBe('@Helper');
+    expect(field?.querySelector('a')?.getAttribute('href')).toBe('https://example.com/');
+    expect(field?.querySelector('img')?.getAttribute('src')).toBe('/emoji.png');
+    expect(node.querySelectorAll('[class*="embedImage"]')).toHaveLength(1);
+    expect(node.querySelector(`[class*="embedFooterText"] ${translated}`)?.textContent).toBe('번역 Community footer');
+  });
+
+  it.each([1, 10])('retries a missing embed when plain text succeeds (%i visible messages)', async (count) => {
+    const nodes = Array.from({ length: count }, (_, index) => message(101 + index, 'Plain message.'));
+    const node = nodes[0]!;
+    node.insertAdjacentHTML('beforeend', `
+      <div id="message-accessories-101">
+        <article class="embed_XyW1ZT"><div class="embedTitle_XyW1ZT">Welcome!</div></article>
+      </div>`);
+    document.body.append(...nodes);
+    let retry = false;
+    const resultFor = (text: string) => text === 'Welcome!' && !retry ? text : `번역 ${text}`;
+    vi.mocked(translateMessage).mockImplementation(async (_, text) => resultFor(text));
+    vi.mocked(translateMessageBatch).mockImplementation(async (items) =>
+      new Map(items.map(({ id, content }) => [id, resultFor(content)])));
+    observer.start();
+    await show(...nodes);
+    expect(node.querySelectorAll(translated)).toHaveLength(1);
+    expect(unobserve).not.toHaveBeenCalledWith(node);
+
+    retry = true;
+    await show(node);
+    expect(node.querySelectorAll(translated)).toHaveLength(2);
+    expect(unobserve).toHaveBeenCalledWith(node);
+  });
 });

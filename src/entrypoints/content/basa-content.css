@@ -28,10 +28,14 @@
   resize: vertical;
 }
 
+[data-basa-translation]::after,
+.discord-translator-translation {
+  color: var(--text-subtle, var(--text-muted, inherit));
+}
+
 [data-basa-translation]::after {
   content: attr(data-basa-translation);
   display: block;
-  color: var(--text-muted, #b9bbbe);
   font-size: .95em;
   font-weight: normal;
   white-space: normal;

@@ -106,10 +106,11 @@ describe('extractBlocks', () => {
 });
 
 describe('assembleTranslation', () => {
-  it('creates the translation container with the expected class and style', () => {
+  it('creates a container whose color is controlled by the extension stylesheet', () => {
     const container = assembleTranslation([]);
     expect(container.className).toBe('discord-translator-translation');
-    expect(container.style.color).toBeTruthy();
+    expect(container.style.color).toBe('');
+    expect(container.style.fontSize).toBe('0.95em');
   });
 
   it('renders a p block with plain text', () => {

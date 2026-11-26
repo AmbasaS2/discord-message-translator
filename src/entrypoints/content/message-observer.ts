@@ -27,6 +27,25 @@ const BATCH_SIZE = 10; // Number of messages to translate in a single batch
 // Language detection constants
 const LANGUAGE_DETECTION_MIN_CONFIDENCE = 0.7; // Minimum confidence for language detection
 
+interface BlockEntry {
+  block: StructuredBlock;
+  id: string;
+  send: boolean;
+}
+
+function resolveBlock(entry: BlockEntry, results: Map<string, string>, preserveTokens: boolean) {
+  const { block, id } = entry;
+  let translation = results.get(id) || block.text;
+  if (preserveTokens && block.placeholders.length) {
+    translation = translation.replace(/§\s*([MCP])\s*(\d+)\s*§/gi,
+      (_, prefix: string, index: string) => `§${prefix.toUpperCase()}${index}§`);
+    if (block.placeholders.some(({ token }) => !translation.includes(token))) {
+      translation = block.text;
+    }
+  }
+  return { block, translation };
+}
+
 export class MessageTranslationObserver {
   private intersectionObserver: IntersectionObserver;
   private mutationObserver: MutationObserver;
@@ -299,7 +318,8 @@ export class MessageTranslationObserver {
       kind: 'structured';
       element: HTMLElement;
       parent: HTMLElement;
-      entries: Array<{ block: StructuredBlock; id: string }>;
+      entries: BlockEntry[];
+      embed: boolean;
     };
     const plans: Array<SimplePlan | StructuredPlan> = [];
 
@@ -365,7 +385,9 @@ export class MessageTranslationObserver {
         if (plan.kind === 'simple') {
           pushUnique(plan.contentId, plan.content);
         } else {
-          plan.entries.forEach(({ id, block }) => pushUnique(id, block.text));
+          plan.entries.forEach(({ id, block, send }) => {
+            if (send) pushUnique(id, block.text);
+          });
         }
       }
 
@@ -376,11 +398,15 @@ export class MessageTranslationObserver {
 
       // Inject translations into all elements
       const translatedParents = new Set<HTMLElement>();
+      const incompleteEmbeds = new Set<HTMLElement>();
 
       for (const plan of plans) {
         if (plan.kind === 'simple') {
           const translation = translations.get(plan.contentId);
-          if (!translation || translation === plan.content) continue;
+          if (!translation || translation === plan.content) {
+            if (plan.type === 'embed-section') incompleteEmbeds.add(plan.parent);
+            continue;
+          }
           if (plan.type === 'embed-section') {
             this.injectTranslationToEmbedSection(plan.element, translation, settings.translationMode);
           } else {
@@ -389,15 +415,16 @@ export class MessageTranslationObserver {
           this.translatedElements.add(plan.element);
           translatedParents.add(plan.parent);
         } else {
-          const translatedBlocks = plan.entries.map(({ block, id }) => ({
-            block,
-            translation: translations.get(id) ?? block.text,
-          }));
-          if (!translatedBlocks.some(({ block, translation }) => translation !== block.text)) continue;
+          const translatedBlocks = plan.entries.map((entry) => resolveBlock(entry, translations, plan.embed));
+          if (!translatedBlocks.some(({ block, translation }) => translation !== block.text)) {
+            if (plan.embed) incompleteEmbeds.add(plan.parent);
+            continue;
+          }
           this.injectStructuredTranslationToElement(
             plan.element,
             translatedBlocks,
-            settings.translationMode
+            settings.translationMode,
+            plan.embed
           );
           this.translatedElements.add(plan.element);
           translatedParents.add(plan.parent);
@@ -406,6 +433,7 @@ export class MessageTranslationObserver {
 
       // Mark parent messages as translated
       for (const container of translatedParents) {
+        if (incompleteEmbeds.has(container)) continue;
         this.translatedMessages.add(container);
         this.intersectionObserver.unobserve(container);
       }
@@ -423,7 +451,7 @@ export class MessageTranslationObserver {
    *
    * Structured flow is used for main message-content elements that contain
    * block-level markup (headings / lists) or multiple paragraphs. Reply
-   * contexts and embed sections always use the simple flow.
+   * contexts use the simple flow. Embed blocks also protect rich inline content.
    */
   private buildTranslationPlan(
     item: TranslatableElement,
@@ -431,21 +459,29 @@ export class MessageTranslationObserver {
     fallbackText: string
   ):
     | { kind: 'simple'; contentId: string; content: string; element: HTMLElement; parent: HTMLElement; type: 'message-content' | 'embed-section' }
-    | { kind: 'structured'; element: HTMLElement; parent: HTMLElement; entries: Array<{ block: StructuredBlock; id: string }> }
+    | { kind: 'structured'; element: HTMLElement; parent: HTMLElement; entries: BlockEntry[]; embed: boolean }
     | null {
     const isReplyContext = item.element.closest('[id^="message-reply-context-"]') !== null;
 
-    if (item.type === 'message-content' && !isReplyContext) {
-      const blocks = extractBlocks(item.element);
+    const embed = item.type === 'embed-section';
+    if (!isReplyContext && (!embed || item.element.matches('div, section, article'))) {
+      const blocks = extractBlocks(item.element, embed);
       const hasStructure =
-        blocks.length > 1 || blocks.some((b) => b.tagName !== 'p');
+        blocks.length > 1 || blocks.some((b) => b.tagName !== 'p' || (embed && b.placeholders.length > 0));
       if (hasStructure && blocks.length > 0) {
-        const entries = blocks.map((block, i) => ({ block, id: `${item.id}-basa-structure-v1-b${i}` }));
+        const revision = embed ? 'embed-structure-v1' : 'basa-structure-v1';
+        const entries = blocks.map((block, i) => ({
+          block,
+          id: `${item.id}-${revision}-b${i}`,
+          send: !embed || /\p{L}/u.test(block.text.replace(/§[MCP]\d+§/g, '')),
+        }));
+        if (!entries.some(({ send }) => send)) return null;
         return {
           kind: 'structured',
           element: item.element,
           parent,
           entries,
+          embed,
         };
       }
     }
@@ -479,6 +515,7 @@ export class MessageTranslationObserver {
 
     // Process each translatable element
     let translatedAny = false;
+    let incompleteEmbed = false;
 
     for (const item of translatableElements) {
       const elementKey = getTranslatableElementKey(item);
@@ -521,7 +558,10 @@ export class MessageTranslationObserver {
             plan.content,
             settings.targetLanguage
           );
-          if (!translation || translation === plan.content) continue;
+          if (!translation || translation === plan.content) {
+            if (plan.type === 'embed-section') incompleteEmbed = true;
+            continue;
+          }
           if (plan.type === 'embed-section') {
             this.injectTranslationToEmbedSection(plan.element, translation, settings.translationMode);
           } else {
@@ -529,30 +569,35 @@ export class MessageTranslationObserver {
           }
         } else {
           const blockTranslations = await translateMessageBatch(
-            plan.entries.map(({ id, block }) => ({ id, content: block.text })),
+            plan.entries.filter(({ send }) => send).map(({ id, block }) => ({ id, content: block.text })),
             settings.targetLanguage
           );
-          const translatedBlocks = plan.entries.map(({ block, id }) => ({
-            block,
-            translation: blockTranslations.get(id) ?? block.text,
-          }));
-          if (!translatedBlocks.some(({ block, translation }) => translation !== block.text)) continue;
+          const translatedBlocks = plan.entries.map((entry) => resolveBlock(entry, blockTranslations, plan.embed));
+          if (!translatedBlocks.some(({ block, translation }) => translation !== block.text)) {
+            if (plan.embed) incompleteEmbed = true;
+            continue;
+          }
           this.injectStructuredTranslationToElement(
             plan.element,
             translatedBlocks,
-            settings.translationMode
+            settings.translationMode,
+            plan.embed
           );
         }
         this.translatedElements.add(item.element);
         translatedAny = true;
       } catch (error) {
         console.error(`[MessageObserver] Translation failed for element ${elementKey}:`, error);
+        if (item.type === 'embed-section') {
+          incompleteEmbed = true;
+          continue;
+        }
         throw error;
       }
     }
 
     // Mark main message as translated
-    if (translatedAny) {
+    if (translatedAny && !incompleteEmbed) {
       this.translatedMessages.add(element);
       this.intersectionObserver.unobserve(element);
     }
@@ -567,9 +612,16 @@ export class MessageTranslationObserver {
   private injectStructuredTranslationToElement(
     contentElement: HTMLElement,
     translatedBlocks: Array<{ block: StructuredBlock; translation: string }>,
-    mode: 'replace' | 'append'
+    mode: 'replace' | 'append',
+    embed = false
   ) {
     if (!this.active || !contentElement.isConnected || contentElement.querySelector('.discord-translator-translation')) {
+      return;
+    }
+
+    const translationContainer = assembleTranslation(translatedBlocks);
+    if (embed && mode === 'append') {
+      contentElement.appendChild(translationContainer);
       return;
     }
 
@@ -582,8 +634,6 @@ export class MessageTranslationObserver {
       }
       contentElement.appendChild(originalWrapper);
     }
-
-    const translationContainer = assembleTranslation(translatedBlocks);
 
     if (mode === 'replace') {
       originalWrapper.style.display = 'none';
@@ -626,7 +676,7 @@ export class MessageTranslationObserver {
     // Create translation element
     const translationSpan = document.createElement('span');
     translationSpan.className = 'discord-translator-translation';
-    translationSpan.style.cssText = 'color: #b9bbbe; font-size: 0.95em;';
+    translationSpan.style.cssText = 'font-size: 0.95em;';
     translationSpan.textContent = translation;
 
     if (mode === 'replace') {
@@ -660,33 +710,20 @@ export class MessageTranslationObserver {
       return;
     }
 
-    // Create a wrapper for original content if it doesn't exist
-    let originalWrapper = sectionElement.querySelector('.discord-translator-original') as HTMLElement;
-    if (!originalWrapper) {
-      originalWrapper = document.createElement('div');
-      originalWrapper.className = 'discord-translator-original';
-      // Move all children into the wrapper
-      while (sectionElement.firstChild) {
-        originalWrapper.appendChild(sectionElement.firstChild);
-      }
-      sectionElement.appendChild(originalWrapper);
-    }
-
-    // Create translation element (use div to preserve block structure)
-    const translationDiv = document.createElement('div');
-    translationDiv.className = 'discord-translator-translation';
-    translationDiv.style.cssText = 'color: #b9bbbe; font-size: 0.95em; margin-top: 4px;';
-    translationDiv.textContent = translation;
-
+    const translated = document.createElement('span');
+    translated.className = 'discord-translator-translation';
+    translated.style.cssText = 'display: block; font-size: 0.95em;';
+    translated.textContent = translation;
     if (mode === 'replace') {
-      // Replace mode - hide original content and show translation
+      const originalWrapper = document.createElement('span');
+      originalWrapper.className = 'discord-translator-original';
       originalWrapper.style.display = 'none';
-      translationDiv.style.marginTop = '0';
-      sectionElement.appendChild(translationDiv);
+      originalWrapper.append(...sectionElement.childNodes);
+      sectionElement.appendChild(originalWrapper);
     } else {
-      // Append mode - show both original and translation
-      sectionElement.appendChild(translationDiv);
+      translated.style.marginTop = '4px';
     }
+    sectionElement.appendChild(translated);
   }
 
   stop() {

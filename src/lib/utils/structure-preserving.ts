@@ -24,7 +24,7 @@ const HIDDEN_SELECTOR = '[class*="hiddenVisually"]';
 const MENTION_TOKEN = (i: number) => `§M${i}§`;
 const CHANNEL_TOKEN = (i: number) => `§C${i}§`;
 
-export type BlockTag = 'h1' | 'h2' | 'h3' | 'p' | 'li';
+export type BlockTag = 'h1' | 'h2' | 'h3' | 'p' | 'li' | 'preserved';
 
 export interface Placeholder {
   token: string;
@@ -48,6 +48,8 @@ export interface StructuredBlock {
 interface ExtractionState {
   mentionCount: number;
   channelCount: number;
+  protectedCount: number;
+  preserveRichContent: boolean;
   placeholders: Placeholder[];
 }
 
@@ -55,6 +57,8 @@ function createSubState(parent: ExtractionState): ExtractionState {
   return {
     mentionCount: parent.mentionCount,
     channelCount: parent.channelCount,
+    protectedCount: parent.protectedCount,
+    preserveRichContent: parent.preserveRichContent,
     placeholders: [],
   };
 }
@@ -62,6 +66,13 @@ function createSubState(parent: ExtractionState): ExtractionState {
 function mergeSubState(parent: ExtractionState, sub: ExtractionState) {
   parent.mentionCount = sub.mentionCount;
   parent.channelCount = sub.channelCount;
+  parent.protectedCount = sub.protectedCount;
+}
+
+function protectElement(element: HTMLElement, state: ExtractionState): string {
+  const token = `§P${state.protectedCount++}§`;
+  state.placeholders.push({ token, node: element.cloneNode(true) });
+  return token;
 }
 
 function escapeRegExp(s: string): string {
@@ -88,10 +99,17 @@ function extractTextWithPlaceholders(source: Node, state: ExtractionState, skipN
     return token;
   }
 
-  if (el.matches(MENTION_SELECTOR)) {
+  if (el.matches(MENTION_SELECTOR) || (state.preserveRichContent && el.matches('.mention'))) {
     const token = MENTION_TOKEN(state.mentionCount++);
     state.placeholders.push({ token, node: el.cloneNode(true) });
     return token;
+  }
+
+  if (state.preserveRichContent) {
+    if (el.tagName === 'BR') return '\n';
+    if (el.matches('a[href], code, pre, img, time, [class*="emojiContainer"]')) {
+      return protectElement(el, state);
+    }
   }
 
   let out = '';
@@ -130,12 +148,14 @@ function flushParagraphSegments(
  * If the element has already been wrapped by a previous translation run, the
  * wrapper is transparently unwrapped.
  */
-export function extractBlocks(contentElement: HTMLElement): StructuredBlock[] {
+export function extractBlocks(contentElement: HTMLElement, preserveRichContent = false): StructuredBlock[] {
   const blocks: StructuredBlock[] = [];
   let nextListId = 0;
   const state: ExtractionState = {
     mentionCount: 0,
     channelCount: 0,
+    protectedCount: 0,
+    preserveRichContent,
     placeholders: [],
   };
 
@@ -191,6 +211,14 @@ export function extractBlocks(contentElement: HTMLElement): StructuredBlock[] {
       return;
     }
     const el = child as HTMLElement;
+    if (preserveRichContent && el.tagName === 'PRE') {
+      flush();
+      const sub = createSubState(state);
+      const token = protectElement(el, sub);
+      mergeSubState(state, sub);
+      blocks.push({ tagName: 'preserved', text: token, placeholders: sub.placeholders });
+      return;
+    }
     switch (el.tagName) {
       case 'H1':
       case 'H2':
@@ -270,7 +298,7 @@ export function assembleTranslation(
 ): HTMLElement {
   const container = document.createElement('div');
   container.className = 'discord-translator-translation';
-  container.style.cssText = 'color: #b9bbbe; font-size: 0.95em; margin-top: 4px;';
+  container.style.cssText = 'font-size: 0.95em; margin-top: 4px;';
 
   let currentList: HTMLElement | null = null;
   let currentListContext: 'ul' | 'ol' | null = null;
@@ -299,6 +327,12 @@ export function assembleTranslation(
   }
 
   for (const { block, translation } of translatedBlocks) {
+    if (block.tagName === 'preserved') {
+      currentList = null;
+      currentListContext = null;
+      container.appendChild(buildInlineFromTranslation(block.text, block.placeholders));
+      continue;
+    }
     if (block.tagName === 'li' && block.listPath?.length) {
       currentList = null;
       currentListContext = null;

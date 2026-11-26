@@ -14,7 +14,11 @@ const EMBED_CONTENT_SELECTORS = [
   '[class*="embedDescription"]',
   '[class*="embedFieldName"]',
   '[class*="embedFieldValue"]',
+  '[class*="embedFooterText"]',
 ];
+const EMBED_SECTIONS = EMBED_CONTENT_SELECTORS.join(', ');
+const EMBED_ROOT = 'article, [class*="embed_"]';
+const MESSAGE_ACCESSORIES = '[id^="message-accessories-"]';
 
 /**
  * Check if element is a Discord message list item (contains translatable content)
@@ -90,20 +94,21 @@ export function findAllTranslatableElements(messageElement: HTMLElement): Transl
   });
 
   // Find embed sections within message-accessories
-  const accessoriesElements = messageElement.querySelectorAll('[id^="message-accessories-"]');
+  const accessoriesElements = messageElement.querySelectorAll(MESSAGE_ACCESSORIES);
   accessoriesElements.forEach((accessories) => {
     const accessoriesId = accessories.id.match(/^message-accessories-(\d+)$/)?.[1];
     if (!accessoriesId) return;
 
     // Find all embeds within accessories
-    const embeds = accessories.querySelectorAll('[class*="embed__"]');
+    const embeds = accessories.querySelectorAll(EMBED_ROOT);
     embeds.forEach((embed, embedIndex) => {
       // Find translatable sections within embed
       EMBED_CONTENT_SELECTORS.forEach((selector) => {
         const sections = embed.querySelectorAll(selector);
         sections.forEach((section, sectionIndex) => {
-          const text = extractVisibleText(section as HTMLElement);
-          if (text) {
+          if (section.closest(EMBED_ROOT) === embed &&
+              !section.parentElement?.closest(EMBED_SECTIONS) &&
+              section.textContent?.trim()) {
             // Generate unique ID: accessoriesId-embedIndex-sectionType-sectionIndex
             const sectionType = selector.match(/embed(\w+)/)?.[1]?.toLowerCase() || 'section';
             const uniqueId = `${accessoriesId}-embed${embedIndex}-${sectionType}${sectionIndex}`;
@@ -248,7 +253,7 @@ function generateHash(str: string): string {
  * translation path even when message-content is empty.
  */
 function hasTranslatableEmbed(element: HTMLElement): boolean {
-  const accessories = element.querySelector('[id^="message-accessories-"]');
+  const accessories = element.querySelector(MESSAGE_ACCESSORIES);
   if (!accessories) return false;
   for (const selector of EMBED_CONTENT_SELECTORS) {
     const sections = accessories.querySelectorAll(selector);
