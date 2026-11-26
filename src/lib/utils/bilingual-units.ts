@@ -254,8 +254,6 @@ function renderWholeLayout(root: HTMLElement, layout: BilingualLayout, translati
     const unit = layout.units[i]!;
     const value = translations[i];
     if (!unit.send || !value || value === unit.block.text) continue;
-    if (unit.parts.some(part => !root.contains(part.node) ||
-        (part.node instanceof Text && part.to > part.node.length))) return false;
     unit.parts.forEach((part, partIndex) => {
       const list = edits.get(part.node) ?? [];
       list.push({
@@ -272,6 +270,7 @@ function renderWholeLayout(root: HTMLElement, layout: BilingualLayout, translati
     ? 'font-size: 0.95em;' : 'font-size: 0.95em; margin-top: 4px;';
 
   function copy(node: Node, target: Node): void {
+    if (node instanceof Element && node.matches(IGNORED) && !node.matches(PROTECTED)) return;
     const changes = edits.get(node);
     if (node instanceof Text && changes) {
       let cursor = 0;
@@ -310,6 +309,19 @@ function renderWholeLayout(root: HTMLElement, layout: BilingualLayout, translati
 export function renderBilingualLayout(root: HTMLElement, layout: BilingualLayout, translations: Array<string | undefined>): boolean {
   if (!root.isConnected || root.querySelector('.discord-translator-translation') ||
       root.textContent !== layout.source || translations.length !== layout.units.length) return false;
+  // React can remount identical source text while a request is running.
+  // Rebind the alignment once to the replacement nodes, without a new API call.
+  if (layout.units.some(unit => unit.parts.some(part => !root.contains(part.node) ||
+      (part.node instanceof Text && part.to > part.node.length)))) {
+    const rebound = collectBilingualLayout(root, layout.granularity);
+    if (!rebound || rebound.units.length !== layout.units.length ||
+        rebound.units.some((unit, i) => {
+          const previous = layout.units[i]!;
+          return unit.block.text !== previous.block.text || unit.send !== previous.send ||
+            unit.paragraph !== previous.paragraph || unit.gapBefore !== previous.gapBefore;
+        })) return false;
+    layout = rebound;
+  }
   if (layout.granularity === 'message' || layout.granularity === 'replace') {
     return renderWholeLayout(root, layout, translations);
   }
@@ -333,7 +345,6 @@ export function renderBilingualLayout(root: HTMLElement, layout: BilingualLayout
     // Do not disguise a partially failed response as a complete translation.
     if (changed && complete) {
       const anchor = layout.units[end - 1]!.anchor;
-      if (!root.contains(anchor.node) || (anchor.offset !== undefined && anchor.offset > anchor.node.length)) return false;
       const node = document.createElement('span');
       node.className = 'discord-translator-translation basa-bilingual-unit';
       for (let i = start; i < end; i++) {
@@ -341,6 +352,7 @@ export function renderBilingualLayout(root: HTMLElement, layout: BilingualLayout
         if (i > start) node.appendChild(document.createTextNode(unit.gapBefore));
         node.appendChild(buildInlineFromTranslation(unit.send ? translations[i]! : unit.block.text, unit.block.placeholders));
       }
+      node.querySelectorAll('[id]').forEach(child => child.removeAttribute('id'));
       inserts.push({ anchor, node });
     }
     start = end;

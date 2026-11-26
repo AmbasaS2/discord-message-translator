@@ -117,6 +117,22 @@ describe('MessageTranslationObserver', () => {
     expect(content.querySelector(translated)?.textContent).toBe('수정 후.');
   });
 
+  it('separates the cache identity of a reply preview and the full message', async () => {
+    const node = message(101, 'Full message.');
+    node.insertAdjacentHTML('afterbegin', '<div id="message-reply-context-99"><div id="message-content-101">Preview.</div></div>');
+    document.body.append(node);
+    vi.mocked(getSettings).mockResolvedValue({ ...DEFAULT_SETTINGS, translationProvider: 'openai', translationMode: 'append' });
+    vi.mocked(translateMessageBatch).mockImplementation(async items => {
+      expect(items).toHaveLength(2);
+      expect(items[0]!.id).not.toBe(items[1]!.id);
+      return new Map(items.map(({ id, content }) => [id, content === 'Preview.' ? '미리보기.' : '전체 메시지.']));
+    });
+    observer.start();
+    await show(node);
+    expect(node.querySelector('[id^="message-reply-context-"] ' + translated)?.textContent).toBe('미리보기.');
+    expect(node.querySelector(':scope > [id^="message-content-"] ' + translated)?.textContent).toBe('전체 메시지.');
+  });
+
   it('cancels an entirely detached translation job using the existing mutation callback', async () => {
     const node = message(101, 'Before leaving.');
     document.body.append(node);

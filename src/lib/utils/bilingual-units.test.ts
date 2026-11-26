@@ -44,6 +44,23 @@ describe('interleaved bilingual layout', () => {
     expect(root.textContent).toBe(plan.source);
   });
 
+  it.each(['message', 'paragraph', 'sentence', 'replace'] as const)('rebinds a response to identical remounted source in %s mode', mode => {
+    const root = mount('<span>First. Second.</span>');
+    const plan = collectBilingualLayout(root, mode)!;
+    root.innerHTML = '<span>First. Second.</span>';
+    expect(renderBilingualLayout(root, plan, ['첫째.', '둘째.'])).toBe(true);
+    expect(root.textContent).toContain('첫째.');
+    expect(root.textContent).toContain('둘째.');
+  });
+
+  it('does not clone unrelated controls into a whole-message translation', () => {
+    const root = mount('First. Second.<button>Control</button>');
+    const plan = collectBilingualLayout(root, 'message')!;
+    expect(renderBilingualLayout(root, plan, ['첫째.', '둘째.'])).toBe(true);
+    expect(root.querySelector('.discord-translator-translation button')).toBeNull();
+    expect(root.querySelectorAll('button')).toHaveLength(1);
+  });
+
   it('removes stale generated suffixes instead of overwriting an edited source node', () => {
     const root = mount('One. Two. Three.');
     const original = root.firstChild as Text;

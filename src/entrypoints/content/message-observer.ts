@@ -28,7 +28,6 @@ const BATCH_SIZE = 10; // Number of messages to translate in a single batch
 // Language detection constants
 const LANGUAGE_DETECTION_MIN_CONFIDENCE = 0.7; // Minimum confidence for language detection
 
-const MESSAGE_CONTAINER = '[id^="chat-messages-"], [id^="message-content-"]';
 const SOURCE_REGION = '[id^="message-content-"], [id^="message-accessories-"], [id^="message-reply-context-"]';
 const OWN_UI = '.discord-translator-translation, .basa-draft-tools, .basa-draft-feedback';
 const VIEW_SELECTOR = '.discord-translator-translation';
@@ -78,6 +77,7 @@ export class MessageTranslationObserver {
   private reobserveAfterJob = new WeakSet<HTMLElement>();
   private jobs = new Set<TranslationJob>();
   private requestEpoch = 0;
+  private observedPath = location.pathname;
   private translationQueue: RequestQueue; // Request queue for rate limiting
   private pendingMessages = new Map<HTMLElement, string>();
   private processPendingDebounced: () => void;
@@ -126,17 +126,21 @@ export class MessageTranslationObserver {
     // Reuse the existing observer for source edits. Character-data changes
     // outside message bodies / registered surfaces need no processing.
     this.mutationObserver = new MutationObserver((mutations) => {
-      const dirty = new Set<HTMLElement>();
+      const dirty = new Map<HTMLElement, boolean>();
+      const markDirty = (container: HTMLElement, possibleNewSource = false) => {
+        dirty.set(container, Boolean(dirty.get(container)) || possibleNewSource);
+      };
       let removed = false;
       for (const mutation of mutations) {
         const target = mutation.target instanceof Element ? mutation.target : mutation.target.parentElement;
         if (!target || target.closest(OWN_UI)) continue;
+        if (mutation.type === 'characterData' && !target.closest(SOURCE_REGION + ', [data-basa-surface]')) continue;
         const search = isSearchSurface(target);
         const container = search ? null :
           (target.closest<HTMLElement>('[id^="chat-messages-"]') ?? target.closest<HTMLElement>('[id^="message-content-"]'));
         const ordinaryChat = Boolean(container || (!search && target.closest(SOURCE_REGION)));
         if (mutation.type === 'characterData') {
-          if (container && this.sourceStates.has(container) && target.closest(SOURCE_REGION)) dirty.add(container);
+          if (container && this.sourceStates.has(container) && target.closest(SOURCE_REGION)) markDirty(container);
           else if (!ordinaryChat && target.closest('[data-basa-surface]')) this.surfaces.refreshParent(target);
           continue;
         }
@@ -144,9 +148,12 @@ export class MessageTranslationObserver {
         const deleted = Array.from(mutation.removedNodes);
         if (deleted.length) removed = true;
         if (container && this.sourceStates.has(container)) {
+          // A pure owned-view insertion cannot change the source.
+          if (added.length && !deleted.length && added.every(node =>
+              node instanceof Element && node.matches(VIEW_SELECTOR))) continue;
           if (target.closest(SOURCE_REGION) || [...added, ...deleted].some(node =>
               node instanceof Element && (node.matches(SOURCE_REGION) || node.querySelector(SOURCE_REGION)))) {
-            dirty.add(container);
+            markDirty(container, added.some(node => node instanceof Element && !node.matches(OWN_UI)));
           }
           // New children inside a tracked message are handled by reconciliation,
           // not by another scan for message containers.
@@ -173,8 +180,12 @@ export class MessageTranslationObserver {
           if (!messageContainers.length && isDiscordMessage(node)) this.observeMessage(node);
         }
       }
-      for (const container of dirty) this.reconcileMessage(container);
-      if (this.jobs.size) this.cancelObsoleteJobs();
+      for (const [container, possibleNewSource] of dirty) this.reconcileMessage(container, possibleNewSource);
+      if (this.jobs.size) {
+        const path = location.pathname;
+        if (removed || path !== this.observedPath) this.cancelObsoleteJobs();
+        this.observedPath = path;
+      }
       if (removed) this.surfaces.cancelObsoleteRequest();
     });
   }
@@ -212,7 +223,7 @@ export class MessageTranslationObserver {
     this.requeueChanged(parent);
   }
 
-  private reconcileMessage(parent: HTMLElement): void {
+  private reconcileMessage(parent: HTMLElement, possibleNewSource: boolean): void {
     if (!this.active || !parent.isConnected) return;
     const states = this.sourceStates.get(parent);
     if (!states) return;
@@ -226,7 +237,7 @@ export class MessageTranslationObserver {
     }
     // Late embed bodies and React replacements can introduce a new source
     // element without replacing the message container.
-    if (!changed && this.translatedMessages.has(parent)) {
+    if (!changed && possibleNewSource && this.translatedMessages.has(parent)) {
       changed = findAllTranslatableElements(parent).some(item => !states.has(item.element));
     }
     if (changed) this.requeueChanged(parent);
@@ -625,8 +636,7 @@ export class MessageTranslationObserver {
             this.injectStructuredTranslationToElement(
               plan.element,
               translatedBlocks,
-              settings.translationMode,
-              plan.embed
+              settings.translationMode
             );
           }
           this.markElement(plan.parent, plan.element, plan.state);
@@ -670,6 +680,9 @@ export class MessageTranslationObserver {
     const isReplyContext = item.element.closest('[id^="message-reply-context-"]') !== null;
 
     const embed = item.type === 'embed-section';
+    // A reply preview can be truncated and share a Discord message ID
+    // with its full body. Never let the two overwrite each other's cache.
+    const cacheId = isReplyContext ? bilingualUnitId(item.id, fallbackText, 0, 'reply') : item.id;
     const canStructure = !isReplyContext && (!embed || item.element.matches('div, section, article'));
     if (canStructure) {
       if (item.element.querySelector('.discord-translator-translation')) return null;
@@ -684,7 +697,7 @@ export class MessageTranslationObserver {
         // full-message modes, sharing the same cache key as the paired modes.
         if (onePlain && (granularity === 'message' || granularity === 'replace') &&
             !item.element.querySelector('h1,h2,h3,h4,h5,h6,p,ul,ol,pre,blockquote,br')) {
-          return { kind: 'simple', contentId: item.id, content: fallbackText, element: item.element, parent, type: item.type, state };
+          return { kind: 'simple', contentId: cacheId, content: fallbackText, element: item.element, parent, type: item.type, state };
         }
         const entries = bilingual.units.map(({ block, send }, index) => ({
           block,
@@ -719,7 +732,7 @@ export class MessageTranslationObserver {
 
     return {
       kind: 'simple',
-      contentId: item.id,
+      contentId: cacheId,
       content: fallbackText,
       element: item.element,
       parent,
@@ -841,8 +854,7 @@ export class MessageTranslationObserver {
             this.injectStructuredTranslationToElement(
               plan.element,
               translatedBlocks,
-              settings.translationMode,
-              plan.embed
+              settings.translationMode
             );
           }
         }
@@ -860,7 +872,8 @@ export class MessageTranslationObserver {
     }
 
     // Mark main message as translated
-    if (translatedAny && !incompleteEmbed && !this.reobserveAfterJob.has(element)) {
+    if ((translatedAny || translatableElements.every(item => this.translatedElements.has(item.element))) &&
+        !incompleteEmbed && !this.reobserveAfterJob.has(element)) {
       this.translatedMessages.add(element);
       this.intersectionObserver.unobserve(element);
     }
@@ -875,8 +888,7 @@ export class MessageTranslationObserver {
   private injectStructuredTranslationToElement(
     contentElement: HTMLElement,
     translatedBlocks: Array<{ block: StructuredBlock; translation: string }>,
-    mode: 'replace' | 'append',
-    embed = false
+    mode: 'replace' | 'append'
   ) {
     if (!this.active || !contentElement.isConnected || contentElement.querySelector('.discord-translator-translation')) {
       return;
@@ -990,6 +1002,10 @@ export class MessageTranslationObserver {
     this.jobs.clear();
     this.inFlightMessages = new WeakSet();
     this.reobserveAfterJob = new WeakSet();
+    this.sourceStates = new WeakMap();
+    this.observedMessages = new WeakMap();
+    this.translatedMessages = new WeakSet();
+    this.translatedElements = new WeakSet();
     this.surfaceSettingsRevision++;
     this.surfaces.clear();
     this.intersectionObserver.disconnect();

@@ -81,8 +81,10 @@ export function findAllTranslatableElements(messageElement: HTMLElement): Transl
   const results: TranslatableElement[] = [];
 
   // Find message content elements (not inside reply context at top level)
-  const contentElements = messageElement.querySelectorAll('[id^="message-content-"]');
+  const contentElements = Array.from(messageElement.querySelectorAll<HTMLElement>('[id^="message-content-"]'));
+  if (messageElement.matches('[id^="message-content-"]')) contentElements.unshift(messageElement);
   contentElements.forEach((el) => {
+    if (el.closest('.discord-translator-translation')) return;
     const id = el.id.match(/^message-content-(\d+)$/)?.[1];
     if (id) {
       results.push({
@@ -107,6 +109,7 @@ export function findAllTranslatableElements(messageElement: HTMLElement): Transl
         const sections = embed.querySelectorAll(selector);
         sections.forEach((section, sectionIndex) => {
           if (section.closest(EMBED_ROOT) === embed &&
+              !section.closest('.discord-translator-translation') &&
               !section.parentElement?.closest(EMBED_SECTIONS) &&
               section.textContent?.trim()) {
             // Generate unique ID: accessoriesId-embedIndex-sectionType-sectionIndex

@@ -99,6 +99,7 @@ export class DraftTranslator {
   }
 
   private onFocus = (event: FocusEvent): void => {
+    if (this.editor && !this.editor.isConnected) this.detach();
     if (this.enabled && event.target instanceof HTMLElement) this.attach(event.target);
   };
 

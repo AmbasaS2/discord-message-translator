@@ -489,6 +489,6 @@
     "message": "By sentence"
   },
   "basa_bilingualHint": {
-    "message": "Paragraph and sentence layouts share cached translations. Refresh Discord to apply to existing messages."
+    "message": "All display modes share verified translation results. Refresh Discord to apply to existing messages."
   }
 }
