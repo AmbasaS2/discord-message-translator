@@ -3,18 +3,23 @@ import { createStorage } from '@/lib/cache/factory';
 import type { ITranslationStorage } from '@/lib/cache/types';
 import { createTranslationClient } from '@/lib/api/factory';
 import type { TranslationCacheEntry } from '@/types/cache';
+import type { Settings } from '@/types/settings';
 import { getSettings } from './settings';
 import { validateTranslation } from './translation-validation';
 
 export async function translateMessage(
   messageId: string,
   text: string,
-  targetLang: string
+  targetLang: string,
+  signal?: AbortSignal,
+  snapshot?: Settings,
 ): Promise<string> {
+  signal?.throwIfAborted();
   const storage = await createStorage();
 
   // Check cache
   const cached = await storage.get(messageId);
+  signal?.throwIfAborted();
   const hit = cached?.source === text ? validateTranslation(text, cached.translations[targetLang], targetLang) : null;
   if (hit) {
     console.log(`[Translator] Cache hit for message ${messageId}`);
@@ -22,11 +27,14 @@ export async function translateMessage(
   }
 
   // Get settings and create client
-  const settings = await getSettings();
+  const settings = snapshot ?? await getSettings();
+  signal?.throwIfAborted();
   const client = createTranslationClient(settings);
 
   // Call API
-  const translation = validateTranslation(text, await client.translate(text, targetLang), targetLang);
+  const raw = await (signal ? client.translate(text, targetLang, undefined, signal) : client.translate(text, targetLang));
+  signal?.throwIfAborted();
+  const translation = validateTranslation(text, raw, targetLang);
   if (translation === null) return text;
 
   // chrome-builtin returns the original text when it cannot translate (unsupported
@@ -46,6 +54,7 @@ export async function translateMessage(
     },
     timestamp: Date.now(),
   };
+  signal?.throwIfAborted();
   await storage.set(messageId, entry);
 
   console.log(`[Translator] Translated and cached message ${messageId}`);
@@ -67,13 +76,17 @@ async function readCachedEntries(storage: ITranslationStorage, ids: string[]): P
  */
 export async function translateMessageBatch(
   messages: Array<{ id: string; content: string; groupId?: string }>,
-  targetLang: string
+  targetLang: string,
+  signal?: AbortSignal,
+  snapshot?: Settings,
 ): Promise<Map<string, string>> {
+  signal?.throwIfAborted();
   const storage = await createStorage();
-  const settings = await getSettings();
+  const settings = snapshot ?? await getSettings();
   const results = new Map<string, string>();
 
   const cachedEntries = await readCachedEntries(storage, messages.map(message => message.id));
+  signal?.throwIfAborted();
   const uncachedMessages: typeof messages = [];
   const uncachedTexts: string[] = [];
 
@@ -96,11 +109,13 @@ export async function translateMessageBatch(
   // Call batch translation API
   const client = createTranslationClient(settings);
   let translations: string[];
+  const callBatch = (texts: string[], groups?: string[]) => signal
+    ? client.translateBatch(texts, targetLang, undefined, groups, signal)
+    : groups ? client.translateBatch(texts, targetLang, undefined, groups) : client.translateBatch(texts, targetLang);
 
   try {
     if (settings.translationProvider === 'openai' && uncachedMessages.some(message => message.groupId !== undefined)) {
-      translations = await client.translateBatch(uncachedTexts, targetLang, undefined,
-        uncachedMessages.map(message => message.groupId ?? message.id));
+      translations = await callBatch(uncachedTexts, uncachedMessages.map(message => message.groupId ?? message.id));
     } else if (settings.translationProvider === 'google' || settings.translationProvider === 'deepl') {
       // Respect the services' request size and item limits, while keeping
       // ordinary short messages in one request.
@@ -109,18 +124,21 @@ export async function translateMessageBatch(
         90 * 1024, settings.translationProvider === 'deepl' ? 50 : 128);
       translations = [];
       for (const range of ranges) {
-        const part = await client.translateBatch(uncachedTexts.slice(range.start, range.end), targetLang);
+        signal?.throwIfAborted();
+        const part = await callBatch(uncachedTexts.slice(range.start, range.end));
         if (part.length !== range.end - range.start) throw new Error('Translation batch result count mismatch');
         translations.push(...part);
       }
     } else {
-      translations = await client.translateBatch(uncachedTexts, targetLang);
+      translations = await callBatch(uncachedTexts);
     }
   } catch (error) {
+    signal?.throwIfAborted();
     console.error('[Translator] Batch translation failed:', error);
     throw error;
   }
 
+  signal?.throwIfAborted();
   if (translations.length !== uncachedMessages.length) {
     throw new Error('[Translator] translateBatch returned a mismatched number of results');
   }
@@ -150,8 +168,12 @@ export async function translateMessageBatch(
         timestamp,
       });
     }
+    signal?.throwIfAborted();
     if (storage.setMany) await storage.setMany(entries);
-    else for (const [id, entry] of entries) await storage.set(id, entry);
+    else for (const [id, entry] of entries) {
+      signal?.throwIfAborted();
+      await storage.set(id, entry);
+    }
   }
   console.log(`[Translator] Batch cache: ${results.size} usable, ${cacheable.size} saved`);
   return results;

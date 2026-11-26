@@ -10,7 +10,8 @@ export class DeepLClient {
       : 'https://api.deepl.com/v2';
   }
 
-  async translate(text: string, targetLang: string, sourceLang?: string): Promise<string> {
+  async translate(text: string, targetLang: string, sourceLang?: string, signal?: AbortSignal): Promise<string> {
+    signal?.throwIfAborted();
     const body: Record<string, string> = {
       text,
       target_lang: this.normalizeLanguageCode(targetLang),
@@ -27,6 +28,7 @@ export class DeepLClient {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
+      ...(signal ? { signal } : {}),
     });
 
     if (!response.ok) {
@@ -42,7 +44,8 @@ export class DeepLClient {
    * Translate multiple texts in a single API request
    * More efficient than multiple individual requests
    */
-  async translateBatch(texts: string[], targetLang: string, sourceLang?: string): Promise<string[]> {
+  async translateBatch(texts: string[], targetLang: string, sourceLang?: string, _groupIds?: readonly string[], signal?: AbortSignal): Promise<string[]> {
+    signal?.throwIfAborted();
     if (texts.length === 0) {
       return [];
     }
@@ -63,6 +66,7 @@ export class DeepLClient {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
+      ...(signal ? { signal } : {}),
     });
 
     if (!response.ok) {

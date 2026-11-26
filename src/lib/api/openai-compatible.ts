@@ -43,7 +43,7 @@ export interface CompletionResult {
 }
 
 /** Performs one chat-completions HTTP request. Injected so the content script can run it in the background. */
-export type CompletionTransport = (request: CompletionRequest) => Promise<CompletionResult>;
+export type CompletionTransport = (request: CompletionRequest, signal?: AbortSignal) => Promise<CompletionResult>;
 
 // Reasoning models can think for a long time before the answer completes, so
 // the limit is generous.
@@ -167,6 +167,7 @@ export async function fetchChatCompletion(
   request: CompletionRequest,
   signal?: AbortSignal,
 ): Promise<CompletionResult> {
+  signal?.throwIfAborted();
   const controller = new AbortController();
   const abort = () => controller.abort();
   signal?.addEventListener('abort', abort);
@@ -287,10 +288,11 @@ export class OpenAICompatibleClient {
    * Translate text using OpenAI-compatible API with automatic language detection
    * The LLM will automatically detect the source language
    */
-  async translate(text: string, targetLang: string, _sourceLang?: string): Promise<string> {
+  async translate(text: string, targetLang: string, _sourceLang?: string, signal?: AbortSignal): Promise<string> {
+    signal?.throwIfAborted();
     // Note: sourceLang is ignored as LLM can auto-detect the language
     if (this.isPlamoTranslate) {
-      return this.requestCompletion([{ role: 'user', content: text }], 1000, { targetLang });
+      return this.requestCompletion([{ role: 'user', content: text }], 1000, { targetLang }, signal);
     }
 
     const targetLanguageName = this.getLanguageName(targetLang);
@@ -310,7 +312,7 @@ export class OpenAICompatibleClient {
       },
     ];
 
-    return this.requestCompletion(messages, this.config.purpose === 'draft' ? 3000 : 1000);
+    return this.requestCompletion(messages, this.config.purpose === 'draft' ? 3000 : 1000, undefined, signal);
   }
 
   /**
@@ -319,14 +321,18 @@ export class OpenAICompatibleClient {
    */
   async translateBatch(
     texts: string[], targetLang: string, _sourceLang?: string,
-    groupIds?: readonly string[],
+    groupIds?: readonly string[], signal?: AbortSignal,
   ): Promise<string[]> {
+    signal?.throwIfAborted();
     if (!texts.length) return [];
 
     // This specialized model does not implement indexed JSON translation.
     if (this.isPlamoTranslate) {
       const results: string[] = [];
-      for (const text of texts) results.push(await this.translate(text, targetLang));
+      for (const text of texts) {
+        signal?.throwIfAborted();
+        results.push(await this.translate(text, targetLang, undefined, signal));
+      }
       return results;
     }
 
@@ -360,14 +366,16 @@ export class OpenAICompatibleClient {
     );
     const results = texts.map(() => '');
     for (const range of ranges) {
+      signal?.throwIfAborted();
       const chunk = items.slice(range.start, range.end).map((item, id) => ({ ...item, id }));
       let content: string;
       try {
         content = await this.requestCompletion([
           { role: 'system', content: systemPrompt },
           { role: 'user', content: JSON.stringify(chunk) },
-        ], 4000);
+        ], 4000, undefined, signal);
       } catch (error) {
+        signal?.throwIfAborted();
         // Do not pay again for previously completed chunks, or continue
         // issuing requests after a transport failure.
         if (range.start === 0) throw error;
@@ -392,7 +400,9 @@ export class OpenAICompatibleClient {
     messages: ChatMessage[],
     maxTokens: number,
     plamo?: PlamoOptions,
+    signal?: AbortSignal,
   ): Promise<string> {
+    signal?.throwIfAborted();
     // Parsed per request so an invalid stored value surfaces as a translate error
     // instead of making the factory throw.
     const extra = parseExtraBody(this.config.extraBody);
@@ -423,11 +433,13 @@ export class OpenAICompatibleClient {
       if (value === null) delete body[key];
     }
 
-    const result = await this.transport({
+    const request = {
       url: `${this.config.baseUrl}/chat/completions`,
       apiKey: this.config.apiKey,
       body: { ...body, stream: true },
-    });
+    };
+    const result = await (signal ? this.transport(request, signal) : this.transport(request));
+    signal?.throwIfAborted();
     const content = result.content.trim();
 
     if (!content) {

@@ -1,4 +1,5 @@
 import { createTranslationClient } from '@/lib/api/factory';
+import { validateTranslation } from '@/lib/utils/translation-validation';
 import { getSettings } from '@/lib/utils/settings';
 import { t } from '@/lib/utils/i18n';
 import { createDraftIcon, type DraftIcon } from './basa-icons';
@@ -74,6 +75,7 @@ export class DraftTranslator {
   private configureRevision = 0;
   private generation = 0;
   private busy = false;
+  private requestController: AbortController | null = null;
 
   start(): void {
     document.addEventListener('focusin', this.onFocus);
@@ -102,6 +104,8 @@ export class DraftTranslator {
 
   private detach(): void {
     this.generation++;
+    this.requestController?.abort();
+    this.requestController = null;
     this.removeInputListener?.();
     this.removeInputListener = null;
     this.panel?.remove();
@@ -222,7 +226,9 @@ export class DraftTranslator {
       setStatus('basa_translating');
       updateVisibility();
       const generation = this.generation;
-      const isCurrent = () => generation === this.generation && this.editor === editor && editor.isConnected;
+      const controller = new AbortController();
+      this.requestController = controller;
+      const isCurrent = () => !controller.signal.aborted && generation === this.generation && this.editor === editor && editor.isConnected;
       try {
         const settings = await getSettings();
         if (!settings.draftEnabled || !isCurrent()) return;
@@ -238,9 +244,14 @@ export class DraftTranslator {
             ? settings.draftOpenaiPresetId : settings.activeOpenaiPresetId,
         }, 'draft');
         const source = provider === 'chrome-builtin' && /[가-힣]/.test(snapshot) ? 'ko' : undefined;
-        const translated = await client.translate(snapshot, settings.draftTargetLanguage, source);
+        const raw = await client.translate(snapshot, settings.draftTargetLanguage, source, controller.signal);
         if (!isCurrent()) return;
-        if (!translated.trim() || translated.trim() === snapshot) {
+        const translated = validateTranslation(snapshot, raw, settings.draftTargetLanguage);
+        if (translated === null) {
+          setStatus('basa_draftError', true);
+          return;
+        }
+        if (translated === snapshot) {
           setStatus('basa_draftUnchanged', true);
           return;
         }
@@ -257,6 +268,7 @@ export class DraftTranslator {
       } catch {
         if (isCurrent()) setStatus('basa_draftError', true);
       } finally {
+        if (this.requestController === controller) this.requestController = null;
         if (generation === this.generation) {
           this.busy = false;
           translate.disabled = false;

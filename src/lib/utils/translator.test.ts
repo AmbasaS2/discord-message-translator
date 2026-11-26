@@ -105,6 +105,15 @@ describe('Translator Utilities', () => {
     expect(saved.get('b').translations.ko).toBe('둘째');
   });
 
+  it('does not cache a response from a cancelled request', async () => {
+    const controller = new AbortController();
+    mockStorage.get.mockResolvedValue(null);
+    mockTranslate.mockImplementation(async () => { controller.abort(); return '새 번역'; });
+    vi.mocked(getSettings).mockResolvedValue({ translationProvider: 'google', apiKeys: { google: 'key' } } as any);
+    await expect(translateMessage('a', 'New.', 'ko', controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    expect(mockStorage.set).not.toHaveBeenCalled();
+  });
+
   describe('translateMessage', () => {
     it('should return cached translation if available', async () => {
       const messageId = 'msg-123';

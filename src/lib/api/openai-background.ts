@@ -14,26 +14,38 @@ type CompletionPortMessage =
   | { type: 'error'; message: string };
 
 /** Content-script transport: runs the request in the background service worker. */
-export function requestCompletionViaBackground(request: CompletionRequest): Promise<CompletionResult> {
+export function requestCompletionViaBackground(request: CompletionRequest, signal?: AbortSignal): Promise<CompletionResult> {
+  if (signal?.aborted) return Promise.reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
   return new Promise((resolve, reject) => {
     const port = chrome.runtime.connect({ name: OPENAI_COMPLETION_PORT });
     let settled = false;
+    const finish = (action: () => void, disconnect: boolean) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener('abort', abort);
+      if (disconnect) {
+        try { port.disconnect(); } catch { /* Already disconnected. */ }
+      }
+      action();
+    };
+    const abort = () => finish(
+      () => reject(signal?.reason ?? new DOMException('Aborted', 'AbortError')), true,
+    );
 
     port.onMessage.addListener((message: CompletionPortMessage) => {
       if (message.type === 'ping') return;
-      settled = true;
-      port.disconnect();
-      if (message.type === 'result') {
-        resolve(message.result);
-      } else {
-        reject(new Error(message.message));
-      }
+      finish(() => {
+        if (message.type === 'result') resolve(message.result);
+        else reject(new Error(message.message));
+      }, true);
     });
     port.onDisconnect.addListener(() => {
-      if (!settled) reject(new Error('Background service worker stopped before the LLM responded'));
+      finish(() => reject(new Error('Background service worker stopped before the LLM responded')), false);
     });
-
-    port.postMessage(request);
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) { abort(); return; }
+    try { port.postMessage(request); }
+    catch (error) { finish(() => reject(error), true); }
   });
 }
 

@@ -44,6 +44,24 @@ describe('requestCompletionViaBackground', () => {
     await expect(promise).rejects.toThrow('OpenAI API Error (401): bad key');
   });
 
+  it('disconnects an active request on cancellation and ignores late results', async () => {
+    const controller = new AbortController();
+    const promise = requestCompletionViaBackground(request, controller.signal);
+    const rejected = expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+    controller.abort();
+    await rejected;
+    expect(port.disconnect).toHaveBeenCalledTimes(1);
+    port.receive({ type: 'result', result: { content: 'late', reasoning: '', finishReason: 'stop' } });
+    expect(port.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not open a background port for an already cancelled request', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(requestCompletionViaBackground(request, controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    expect(port.postMessage).not.toHaveBeenCalled();
+  });
+
   it('rejects when the port closes before a response', async () => {
     const promise = requestCompletionViaBackground(request);
     port.drop();

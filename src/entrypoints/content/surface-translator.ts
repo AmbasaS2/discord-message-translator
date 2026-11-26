@@ -40,6 +40,7 @@ export class SurfaceTranslator {
   private selector = '';
   private settings: Settings | null = null;
   private epoch = 0;
+  private activeRequest: { controller: AbortController; needed: () => boolean } | null = null;
 
   constructor(private readonly intersection: IntersectionObserver) {}
 
@@ -117,6 +118,10 @@ export class SurfaceTranslator {
     if (root.childElementCount) root.querySelectorAll<HTMLElement>('[data-basa-surface]').forEach((element) => this.release(element));
   }
 
+  cancelObsoleteRequest(): void {
+    if (this.activeRequest && !this.activeRequest.needed()) this.activeRequest.controller.abort();
+  }
+
   private release(element: HTMLElement): void {
     this.intersection.unobserve(element);
     this.pending.delete(element);
@@ -125,6 +130,7 @@ export class SurfaceTranslator {
     element.removeAttribute(TRANSLATION);
     element.removeAttribute('data-basa-label-mode');
     element.removeAttribute('data-basa-original');
+    this.cancelObsoleteRequest();
   }
 
   private remember(key: string, translated: string): void {
@@ -159,8 +165,24 @@ export class SurfaceTranslator {
     if (missing.size) {
       const client = createTranslationClient(settings);
       const entries = [...missing];
-      const translated = await client.translateBatch(entries.map(([, text]) => text), settings.targetLanguage);
-      if (epoch !== this.epoch) return;
+      const controller = new AbortController();
+      const request = {
+        controller,
+        needed: () => epoch === this.epoch && work.some(item => missing.has(item.key) &&
+          item.element.isConnected && this.states.get(item.element) === item.state),
+      };
+      this.activeRequest = request;
+      let translated: string[];
+      try {
+        if (!request.needed()) return;
+        translated = await client.translateBatch(entries.map(([, text]) => text), settings.targetLanguage, undefined, undefined, controller.signal);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        throw error;
+      } finally {
+        if (this.activeRequest === request) this.activeRequest = null;
+      }
+      if (controller.signal.aborted || epoch !== this.epoch) return;
       entries.forEach(([key, source], index) => {
         const result = validateTranslation(source, translated[index], settings.targetLanguage);
         if (!result) return;
@@ -185,6 +207,8 @@ export class SurfaceTranslator {
 
   clear(): void {
     this.epoch++;
+    this.activeRequest?.controller.abort();
+    this.activeRequest = null;
     document.querySelectorAll<HTMLElement>('[data-basa-surface]').forEach((element) => this.release(element));
     this.pending.clear();
     this.cache.clear();

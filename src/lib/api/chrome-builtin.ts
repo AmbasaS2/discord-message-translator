@@ -233,8 +233,10 @@ export class ChromeBuiltinTranslator {
     indices: number[],
     normalizedSource: string,
     normalizedTarget: string,
-    results: string[]
+    results: string[],
+    signal?: AbortSignal,
   ): Promise<void> {
+    signal?.throwIfAborted();
     const pairKey = `${normalizedSource}-${normalizedTarget}`;
     const fallbackToOriginals = () => {
       for (let j = 0; j < indices.length; j++) {
@@ -247,6 +249,7 @@ export class ChromeBuiltinTranslator {
 
     if (this.coolingDown(pairKey)) return;
     const availability = await this.getAvailability(normalizedSource, normalizedTarget);
+    signal?.throwIfAborted();
     if (availability === 'unavailable' || this.coolingDown(pairKey)) return;
 
     // Model downloads require user activation. Do not provoke a rejection on
@@ -265,13 +268,16 @@ export class ChromeBuiltinTranslator {
     }
 
     for (let j = 0; j < indices.length; j++) {
+      signal?.throwIfAborted();
       const index = indices[j];
       const text = groupTexts[j];
       if (index === undefined || text === undefined) continue;
 
       try {
         results[index] = await translator.translate(text);
+        signal?.throwIfAborted();
       } catch (error) {
+        signal?.throwIfAborted();
         this.recordFailure(pairKey, 'translate', error);
         results[index] = text;
         if (this.coolingDown(pairKey)) break;
@@ -285,9 +291,10 @@ export class ChromeBuiltinTranslator {
   async translate(
     text: string,
     targetLanguage: string,
-    sourceLanguage?: string
+    sourceLanguage?: string,
+    signal?: AbortSignal,
   ): Promise<string> {
-    const [result] = await this.translateBatch([text], targetLanguage, sourceLanguage);
+    const [result] = await this.translateBatch([text], targetLanguage, sourceLanguage, undefined, signal);
     return result ?? text;
   }
 
@@ -301,8 +308,11 @@ export class ChromeBuiltinTranslator {
   async translateBatch(
     texts: string[],
     targetLanguage: string,
-    sourceLanguage?: string
+    sourceLanguage?: string,
+    _groupIds?: readonly string[],
+    signal?: AbortSignal,
   ): Promise<string[]> {
+    signal?.throwIfAborted();
     if (texts.length === 0) {
       return [];
     }
@@ -319,11 +329,13 @@ export class ChromeBuiltinTranslator {
     if (sourceLanguage) {
       const normalizedSource = ChromeBuiltinTranslator.normalizeLanguageCode(sourceLanguage);
       const indices = texts.map((_, i) => i);
-      await this.translateGroup(texts, indices, normalizedSource, normalizedTarget, results);
+      await this.translateGroup(texts, indices, normalizedSource, normalizedTarget, results, signal);
+      signal?.throwIfAborted();
       return results;
     }
 
     const detectedSources = await Promise.all(texts.map((text) => this.detectSource(text)));
+    signal?.throwIfAborted();
 
     // Group remaining indices by normalized detected source, resolving
     // same-language texts immediately without touching the Translator API.
@@ -346,9 +358,10 @@ export class ChromeBuiltinTranslator {
     }
 
     for (const [normalizedSource, group] of groups) {
-      await this.translateGroup(group.texts, group.indices, normalizedSource, normalizedTarget, results);
+      await this.translateGroup(group.texts, group.indices, normalizedSource, normalizedTarget, results, signal);
     }
 
+    signal?.throwIfAborted();
     return results;
   }
 

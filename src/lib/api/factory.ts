@@ -8,8 +8,8 @@ import { ChromeBuiltinTranslator } from './chrome-builtin';
 import type { TranslationPurpose } from './translation-prompts';
 
 export interface TranslationClient {
-  translate(text: string, targetLang: string, sourceLang?: string): Promise<string>;
-  translateBatch(texts: string[], targetLang: string, sourceLang?: string, groupIds?: readonly string[]): Promise<string[]>;
+  translate(text: string, targetLang: string, sourceLang?: string, signal?: AbortSignal): Promise<string>;
+  translateBatch(texts: string[], targetLang: string, sourceLang?: string, groupIds?: readonly string[], signal?: AbortSignal): Promise<string[]>;
 }
 
 // Singleton instance for Chrome Built-in Translator (to reuse translator cache)

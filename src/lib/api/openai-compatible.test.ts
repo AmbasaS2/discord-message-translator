@@ -435,6 +435,17 @@ describe('OpenAICompatibleClient', () => {
       expect(fetch).toHaveBeenCalledTimes(1);
     });
 
+    it('does not start later AI chunks after cancellation', async () => {
+      const controller = new AbortController();
+      const text = 'A'.repeat(2400);
+      vi.mocked(fetch).mockImplementationOnce(async () => {
+        controller.abort();
+        return { ok: true, headers: new Headers(), json: async () => ({ choices: [{ message: { content: tagged('번역') } }] }) } as Response;
+      });
+      await expect(client.translateBatch([text, text], 'ko', undefined, undefined, controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
     it('splits long inputs at complete units and preserves order', async () => {
       const text = 'A'.repeat(2400);
       mockContents(tagged('첫째'), tagged('둘째'), tagged('셋째'));
