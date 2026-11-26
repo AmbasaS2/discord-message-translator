@@ -20,6 +20,7 @@ export interface Settings {
 
   // Translation settings
   targetLanguage: string; // e.g., "ja", "en", "de"
+  bilingualGranularity: 'message' | 'paragraph' | 'sentence';
   translationMode: 'replace' | 'append'; // Replace original or append translation
   autoTranslate: boolean; // Auto-translate on/off
   translateNavigation: boolean;
@@ -49,6 +50,7 @@ export const DEFAULT_SETTINGS: Settings = {
   activeOpenaiPresetId: null,
   targetLanguage: 'ja',
   translationMode: 'replace',
+  bilingualGranularity: 'message',
   autoTranslate: true,
   translateNavigation: true,
   translateForum: true,

@@ -18,6 +18,8 @@ import './styles.css';
 const autoTranslateToggle = document.getElementById('autoTranslate') as HTMLInputElement;
 const targetLanguageSelect = document.getElementById('targetLanguage') as HTMLSelectElement;
 const translationModeSelect = document.getElementById('translationMode') as HTMLSelectElement;
+const bilingualSelect = document.getElementById('bilingualGranularity') as HTMLSelectElement;
+const bilingualField = document.getElementById('bilingualGranularityField') as HTMLElement;
 const translationProviderSelect = document.getElementById('translationProvider') as HTMLSelectElement;
 const chromeBuiltinHint = document.getElementById('chromeBuiltinHint') as HTMLLabelElement;
 const skipTargetLanguageToggle = document.getElementById('skipTargetLanguage') as HTMLInputElement;
@@ -151,6 +153,8 @@ async function loadSettings() {
   autoTranslateToggle.checked = settings.autoTranslate;
   targetLanguageSelect.value = settings.targetLanguage;
   translationModeSelect.value = settings.translationMode;
+  bilingualSelect.value = settings.bilingualGranularity;
+  bilingualField.hidden = settings.translationMode !== 'append';
   googleApiKeyInput.value = settings.apiKeys.google || '';
   deeplApiKeyInput.value = settings.apiKeys.deepl || '';
   draftEnabled.checked = settings.draftEnabled;
@@ -210,8 +214,10 @@ targetLanguageSelect.addEventListener('change', () => {
 
 // Translation Mode change
 translationModeSelect.addEventListener('change', () => {
-  autoSave({ translationMode: translationModeSelect.value as 'replace' | 'append' });
+  saveEngineChange({ translationMode: translationModeSelect.value as Settings['translationMode'] });
+  bilingualField.hidden = translationModeSelect.value !== 'append';
 });
+bilingualSelect.addEventListener('change', () => saveEngineChange({ bilingualGranularity: bilingualSelect.value as Settings['bilingualGranularity'] }));
 
 // Skip Target Language toggle
 skipTargetLanguageToggle.addEventListener('change', () => {

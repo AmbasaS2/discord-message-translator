@@ -241,3 +241,7 @@ The popup and settings page let incoming messages and outgoing drafts use differ
 The outgoing detailed style prompt is enabled by default and editable in settings. Turning it off retains the saved style and sends only the mandatory translation contract; it does not disable translation. Optional JSON model parameters are under Advanced API options and normally remain empty.
 
 Future verified builds use ordinary three-part version numbers in the package, manifest, release tag and ZIP filename (for example `2.1.2`, `v2.1.2`). Earlier revision-tagged releases remain unchanged.
+
+### Bilingual reading layout
+
+When Show Both is selected, choose whole message (the existing default), paragraph, or sentence in the popup or incoming settings. Paragraph and sentence layouts interleave each source unit with its translation in chat and supported embed bodies, preserving live source links, mentions and list structure. Code blocks remain untouched. Search previews, channel labels, short reply previews and forum card titles keep their existing compact layout. Refresh Discord to apply to already translated messages. Sentence mode sends finer-grained units through the existing batch and cache pipeline and can increase remote API requests; exceptionally fragmented messages fall back to the existing layout. No new observers, polling or background work are introduced.

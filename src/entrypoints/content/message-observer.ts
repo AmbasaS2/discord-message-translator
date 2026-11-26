@@ -5,6 +5,7 @@ import { RequestQueue, debounce } from '@/lib/utils/async-control';
 import { ChromeLanguageDetector } from '@/lib/api/chrome-language-detector';
 import { extractBlocks, assembleTranslation, type StructuredBlock } from '@/lib/utils/structure-preserving';
 import { shouldSkipText } from './language-skip';
+import { collectBilingualLayout, renderBilingualLayout, bilingualUnitId, type BilingualLayout } from '@/lib/utils/bilingual-units';
 import { SurfaceTranslator, isSearchSurface } from './surface-translator';
 
 /**
@@ -320,6 +321,7 @@ export class MessageTranslationObserver {
       parent: HTMLElement;
       entries: BlockEntry[];
       embed: boolean;
+      bilingual?: BilingualLayout;
     };
     const plans: Array<SimplePlan | StructuredPlan> = [];
 
@@ -357,7 +359,7 @@ export class MessageTranslationObserver {
           }
         }
 
-        const plan = this.buildTranslationPlan(item, container, text);
+        const plan = this.buildTranslationPlan(item, container, text, settings);
         if (plan) {
           plans.push(plan);
         }
@@ -415,17 +417,24 @@ export class MessageTranslationObserver {
           this.translatedElements.add(plan.element);
           translatedParents.add(plan.parent);
         } else {
-          const translatedBlocks = plan.entries.map((entry) => resolveBlock(entry, translations, plan.embed));
+          const translatedBlocks = plan.entries.map((entry) => resolveBlock(entry, translations, plan.embed || Boolean(plan.bilingual)));
           if (!translatedBlocks.some(({ block, translation }) => translation !== block.text)) {
             if (plan.embed) incompleteEmbeds.add(plan.parent);
             continue;
           }
-          this.injectStructuredTranslationToElement(
-            plan.element,
-            translatedBlocks,
-            settings.translationMode,
-            plan.embed
-          );
+          if (plan.bilingual) {
+            if (!this.active || !renderBilingualLayout(plan.element, plan.bilingual, translatedBlocks.map(({ translation }) => translation))) {
+              incompleteEmbeds.add(plan.parent);
+              continue;
+            }
+          } else {
+            this.injectStructuredTranslationToElement(
+              plan.element,
+              translatedBlocks,
+              settings.translationMode,
+              plan.embed
+            );
+          }
           this.translatedElements.add(plan.element);
           translatedParents.add(plan.parent);
         }
@@ -456,15 +465,32 @@ export class MessageTranslationObserver {
   private buildTranslationPlan(
     item: TranslatableElement,
     parent: HTMLElement,
-    fallbackText: string
+    fallbackText: string,
+    settings: Awaited<ReturnType<typeof getSettings>>
   ):
     | { kind: 'simple'; contentId: string; content: string; element: HTMLElement; parent: HTMLElement; type: 'message-content' | 'embed-section' }
-    | { kind: 'structured'; element: HTMLElement; parent: HTMLElement; entries: BlockEntry[]; embed: boolean }
+    | { kind: 'structured'; element: HTMLElement; parent: HTMLElement; entries: BlockEntry[]; embed: boolean; bilingual?: BilingualLayout }
     | null {
     const isReplyContext = item.element.closest('[id^="message-reply-context-"]') !== null;
 
     const embed = item.type === 'embed-section';
-    if (!isReplyContext && (!embed || item.element.matches('div, section, article'))) {
+    const canStructure = !isReplyContext && (!embed || item.element.matches('div, section, article'));
+    if (canStructure && settings.translationMode === 'append' &&
+        (settings.bilingualGranularity === 'paragraph' || settings.bilingualGranularity === 'sentence')) {
+      if (item.element.querySelector('.discord-translator-translation')) return null;
+      const bilingual = collectBilingualLayout(item.element, settings.bilingualGranularity);
+      if (bilingual) {
+        if (!bilingual.units.length) return null;
+        const entries = bilingual.units.map(({ block, send }) => ({
+          block,
+          id: bilingual.units.length === 1 && block.text === fallbackText && !block.placeholders.length
+            ? item.id : bilingualUnitId(item.id, block.text),
+          send,
+        }));
+        return { kind: 'structured', element: item.element, parent, entries, embed, bilingual };
+      }
+    }
+    if (canStructure) {
       const blocks = extractBlocks(item.element, embed);
       const hasStructure =
         blocks.length > 1 || blocks.some((b) => b.tagName !== 'p' || (embed && b.placeholders.length > 0));
@@ -546,7 +572,7 @@ export class MessageTranslationObserver {
         }
       }
 
-      const plan = this.buildTranslationPlan(item, element, text);
+      const plan = this.buildTranslationPlan(item, element, text, settings);
       if (!plan) {
         continue;
       }
@@ -572,17 +598,24 @@ export class MessageTranslationObserver {
             plan.entries.filter(({ send }) => send).map(({ id, block }) => ({ id, content: block.text })),
             settings.targetLanguage
           );
-          const translatedBlocks = plan.entries.map((entry) => resolveBlock(entry, blockTranslations, plan.embed));
+          const translatedBlocks = plan.entries.map((entry) => resolveBlock(entry, blockTranslations, plan.embed || Boolean(plan.bilingual)));
           if (!translatedBlocks.some(({ block, translation }) => translation !== block.text)) {
             if (plan.embed) incompleteEmbed = true;
             continue;
           }
-          this.injectStructuredTranslationToElement(
-            plan.element,
-            translatedBlocks,
-            settings.translationMode,
-            plan.embed
-          );
+          if (plan.bilingual) {
+            if (!this.active || !renderBilingualLayout(plan.element, plan.bilingual, translatedBlocks.map(({ translation }) => translation))) {
+              incompleteEmbed = true;
+              continue;
+            }
+          } else {
+            this.injectStructuredTranslationToElement(
+              plan.element,
+              translatedBlocks,
+              settings.translationMode,
+              plan.embed
+            );
+          }
         }
         this.translatedElements.add(item.element);
         translatedAny = true;

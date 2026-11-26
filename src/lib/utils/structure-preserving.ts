@@ -258,7 +258,7 @@ export function extractBlocks(contentElement: HTMLElement, preserveRichContent =
   return blocks;
 }
 
-function buildInlineFromTranslation(
+export function buildInlineFromTranslation(
   translation: string,
   placeholders: Placeholder[]
 ): DocumentFragment {

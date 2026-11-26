@@ -44,6 +44,14 @@
           <option value="append" data-i18n="popup_modeAppend">Show Both</option>
         </select>
       </label>
+      <label class="basa-field" id="bilingualGranularityField" for="bilingualGranularity" hidden>
+        <span data-i18n="basa_bilingualGranularity">Bilingual layout</span>
+        <select id="bilingualGranularity"><option value="message" data-i18n="basa_bilingualMessage">Whole message</option>
+          <option value="paragraph" data-i18n="basa_bilingualParagraph">By paragraph</option>
+          <option value="sentence" data-i18n="basa_bilingualSentence">By sentence</option>
+        </select>
+        <span data-i18n="basa_bilingualHint">Refresh Discord to apply to existing messages. Sentence mode may increase translation requests.</span>
+      </label>
       <h3 data-i18n="basa_surfaces">Extra translation targets</h3>
       <label class="basa-switch-row"><span data-i18n="basa_navigation">Channels and categories</span><input type="checkbox" id="translateNavigation" class="basa-switch" /></label>
       <label class="basa-switch-row"><span data-i18n="basa_forum">Forum titles and descriptions</span><input type="checkbox" id="translateForum" class="basa-switch" /></label>

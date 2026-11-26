@@ -11,6 +11,8 @@ import './styles.css';
 const autoTranslateToggle = document.getElementById('autoTranslate') as HTMLInputElement;
 const targetLanguageSelect = document.getElementById('targetLanguage') as HTMLSelectElement;
 const translationModeSelect = document.getElementById('translationMode') as HTMLSelectElement;
+const bilingualSelect = document.getElementById('bilingualGranularity') as HTMLSelectElement;
+const bilingualField = document.getElementById('bilingualGranularityField') as HTMLElement;
 const openOptionsButton = document.getElementById('openOptions') as HTMLButtonElement;
 const incomingProvider = document.getElementById('incomingProvider') as HTMLSelectElement;
 const incomingPreset = document.getElementById('incomingOpenaiPresetId') as HTMLSelectElement;
@@ -51,6 +53,8 @@ async function loadSettings() {
   autoTranslateToggle.checked = settings.autoTranslate;
   targetLanguageSelect.value = settings.targetLanguage;
   translationModeSelect.value = settings.translationMode;
+  bilingualSelect.value = settings.bilingualGranularity;
+  bilingualField.hidden = settings.translationMode !== 'append';
   incomingProvider.value = settings.translationProvider;
   draftEnabled.checked = settings.draftEnabled;
   draftTarget.value = settings.draftTargetLanguage;
@@ -68,7 +72,11 @@ autoTranslateToggle.addEventListener('change', () => {
   showToast(autoTranslateToggle.checked ? t('status_autoTranslateEnabled') : t('status_autoTranslateDisabled'));
 });
 targetLanguageSelect.addEventListener('change', () => save({ targetLanguage: targetLanguageSelect.value }));
-translationModeSelect.addEventListener('change', () => save({ translationMode: translationModeSelect.value as Settings['translationMode'] }));
+translationModeSelect.addEventListener('change', () => {
+  save({ translationMode: translationModeSelect.value as Settings['translationMode'] });
+  bilingualField.hidden = translationModeSelect.value !== 'append';
+});
+bilingualSelect.addEventListener('change', () => save({ bilingualGranularity: bilingualSelect.value as Settings['bilingualGranularity'] }));
 incomingProvider.addEventListener('change', () => {
   save({ translationProvider: incomingProvider.value as Settings['translationProvider'] });
   updateConnectionVisibility();

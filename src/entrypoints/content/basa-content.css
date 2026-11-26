@@ -99,3 +99,14 @@
 [data-basa-label-mode="nav"]:focus-within::after {
   content: attr(data-basa-original);
 }
+
+/* One translation follows each selected source unit; original nodes are retained. */
+.discord-translator-translation.basa-bilingual-unit {
+  display: block;
+  font-size: .95em;
+  font-weight: normal;
+  font-style: normal;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin-bottom: .2em;
+}

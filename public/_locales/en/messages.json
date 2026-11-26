@@ -475,5 +475,20 @@
   },
   "basa_noSavedConnections": {
     "message": "No saved connections. Select Add connection to configure a service and model."
+  },
+  "basa_bilingualGranularity": {
+    "message": "Bilingual layout"
+  },
+  "basa_bilingualMessage": {
+    "message": "Whole message"
+  },
+  "basa_bilingualParagraph": {
+    "message": "By paragraph"
+  },
+  "basa_bilingualSentence": {
+    "message": "By sentence"
+  },
+  "basa_bilingualHint": {
+    "message": "Refresh Discord to apply to existing messages. Sentence mode may increase API requests."
   }
 }

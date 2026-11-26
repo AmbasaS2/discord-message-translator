@@ -406,5 +406,20 @@
   },
   "basa_noSavedConnections": {
     "message": "保存された接続がありません。接続を追加してサービスとモデルを登録してください。"
+  },
+  "basa_bilingualGranularity": {
+    "message": "対訳の単位"
+  },
+  "basa_bilingualMessage": {
+    "message": "メッセージ全体"
+  },
+  "basa_bilingualParagraph": {
+    "message": "段落ごと"
+  },
+  "basa_bilingualSentence": {
+    "message": "文ごと"
+  },
+  "basa_bilingualHint": {
+    "message": "既存のメッセージに適用するには Discord を再読み込みしてください。文単位では API リクエストが増える場合があります。"
   }
 }

@@ -170,3 +170,55 @@ describe('MessageTranslationObserver', () => {
     expect(unobserve).toHaveBeenCalledWith(node);
   });
 });
+
+describe('interleaved bilingual modes', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    vi.stubGlobal('IntersectionObserver', class {
+      observe = observe;
+      unobserve = unobserve;
+      disconnect = vi.fn();
+      constructor(callback: typeof onIntersection) { onIntersection = callback; }
+    });
+    vi.stubGlobal('MutationObserver', class {
+      observe = vi.fn();
+      disconnect = vi.fn();
+      constructor(callback: typeof onMutation) { onMutation = callback; }
+    });
+    observer = new MessageTranslationObserver();
+  });
+
+  afterEach(() => {
+    observer.stop();
+    document.body.replaceChildren();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it.each([1, 10])('uses the existing batch path for sentence pairs with %i visible messages', async (count) => {
+    vi.mocked(getSettings).mockResolvedValue({ ...DEFAULT_SETTINGS, translationMode: 'append', bilingualGranularity: 'sentence' });
+    vi.mocked(translateMessageBatch).mockImplementation(async (items) =>
+      new Map(items.map(({ id, content }) => [id, content === 'First.' ? '첫째.' : '둘째.'])));
+    const nodes = Array.from({ length: count }, (_, i) => message(200 + i, 'First. Second.'));
+    document.body.append(...nodes);
+    observer.start();
+    await show(...nodes);
+    expect(nodes[0]!.querySelectorAll('.basa-bilingual-unit')).toHaveLength(2);
+    expect(nodes[0]!.querySelector('[id^="message-content-"]')?.textContent).toBe('First.첫째. Second.둘째.');
+    expect(translateMessageBatch).toHaveBeenCalled();
+    expect(translateMessage).not.toHaveBeenCalled();
+  });
+
+  it('does not alter original replacement mode', async () => {
+    vi.mocked(getSettings).mockResolvedValue({ ...DEFAULT_SETTINGS, translationMode: 'replace', bilingualGranularity: 'sentence' });
+    vi.mocked(translateMessage).mockResolvedValue('번역.');
+    const node = message(200, 'First. Second.');
+    document.body.append(node);
+    observer.start();
+    await show(node);
+    expect(node.querySelector('.basa-bilingual-unit')).toBeNull();
+    expect(node.querySelector<HTMLElement>('.discord-translator-original')?.style.display).toBe('none');
+    expect(node.querySelector(translated)?.textContent).toBe('번역.');
+  });
+});
