@@ -106,7 +106,7 @@ export class MessageTranslationObserver {
     this.mutationObserver = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
         const target = mutation.target;
-        if (target instanceof Element && target.closest('.discord-translator-translation, .discord-translator-original, .basa-draft-tools')) return;
+        if (target instanceof Element && target.closest('.discord-translator-translation, .discord-translator-original, .basa-draft-tools, .basa-draft-feedback')) return;
         const ordinaryChat = target instanceof Element &&
           target.closest('[id^="chat-messages-"], [id^="message-content-"], [id^="message-accessories-"]') !== null &&
           !isSearchSurface(target);
@@ -117,7 +117,7 @@ export class MessageTranslationObserver {
         mutation.addedNodes.forEach((node) => {
           if (node.nodeType === Node.ELEMENT_NODE) {
             const element = node as HTMLElement;
-            if (element.closest('.discord-translator-translation, .discord-translator-original, .basa-draft-tools')) return;
+            if (element.closest('.discord-translator-translation, .discord-translator-original, .basa-draft-tools, .basa-draft-feedback')) return;
             if (!ordinaryChat) this.surfaces.scan(element);
             if (isSearchSurface(element)) return;
 

@@ -18,7 +18,7 @@ export function isSearchSurface(element: Element): boolean {
 }
 
 function isOwnContent(element: Element): boolean {
-  return element.closest('.discord-translator-translation, .discord-translator-original, .basa-draft-tools') !== null;
+  return element.closest('.discord-translator-translation, .discord-translator-original, .basa-draft-tools, .basa-draft-feedback') !== null;
 }
 
 export function surfaceText(element: HTMLElement): string {

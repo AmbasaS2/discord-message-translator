@@ -134,15 +134,19 @@ export class DraftTranslator {
     let applied = false;
     let writing = false;
 
+    const setHidden = (element: HTMLElement, hidden: boolean) => {
+      if (element.hidden !== hidden) element.hidden = hidden;
+    };
     const updateVisibility = () => {
       const hasText = hasDraftText(editor);
-      translate.hidden = !hasText || applied;
-      restore.hidden = !hasText || !applied;
-      copy.hidden = !result || (!applied && preview.hidden);
-      panel.hidden = translate.hidden && restore.hidden && copy.hidden;
+      setHidden(translate, !hasText || applied);
+      setHidden(restore, !hasText || !applied);
+      setHidden(copy, !result || (!applied && preview.hidden));
+      setHidden(panel, translate.hidden && restore.hidden && copy.hidden);
     };
     const setStatus = (key: string, visible = false) => {
-      status.textContent = key ? t(key) : '';
+      const message = key ? t(key) : '';
+      if (status.textContent !== message) status.textContent = message;
       feedback.classList.toggle('basa-draft-feedback--quiet', !visible && preview.hidden);
       status.classList.toggle('basa-draft-status--quiet', !visible);
     };
@@ -154,7 +158,7 @@ export class DraftTranslator {
     const onInput = () => {
       if (writing || this.editor !== editor) return;
       // Changes invalidate a completed result, but never interrupt an active request.
-      if (!this.busy) {
+      if (!this.busy && (result || applied || status.textContent || !preview.hidden)) {
         original = '';
         result = '';
         applied = false;
