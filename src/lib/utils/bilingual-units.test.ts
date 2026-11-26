@@ -12,12 +12,31 @@ function mount(html: string): HTMLElement {
 describe('interleaved bilingual layout', () => {
   afterEach(() => document.body.replaceChildren());
 
-  it('keeps paragraph units together while sentence mode splits them', () => {
+  it('reuses the same canonical sentence units in both display modes', () => {
     const root = mount('<span>First sentence. Second sentence.\n\nThird sentence.</span>');
-    expect(collectBilingualLayout(root, 'paragraph')?.units.map(({ block }) => block.text))
-      .toEqual(['First sentence. Second sentence.', 'Third sentence.']);
-    expect(collectBilingualLayout(root, 'sentence')?.units.map(({ block }) => block.text))
+    const paragraph = collectBilingualLayout(root, 'paragraph')!;
+    const sentence = collectBilingualLayout(root, 'sentence')!;
+    expect(paragraph.units.map(({ block }) => block.text))
       .toEqual(['First sentence.', 'Second sentence.', 'Third sentence.']);
+    expect(sentence.units).toEqual(paragraph.units);
+    expect(sentence.fingerprint).toBe(paragraph.fingerprint);
+    expect(renderBilingualLayout(root, paragraph, ['첫 문장.', '둘째 문장.', '셋째 문장.'])).toBe(true);
+    expect(Array.from(root.querySelectorAll('.basa-bilingual-unit'), el => el.textContent))
+      .toEqual(['첫 문장. 둘째 문장.', '셋째 문장.']);
+  });
+
+  it('protects abbreviated names and versions from artificial sentence splitting', () => {
+    const root = mount('Ask Dr. Smith about v2.1.4. Next sentence.');
+    const layout = collectBilingualLayout(root, 'sentence')!;
+    expect(layout.units.map(({ block }) => block.text)).toEqual(['Ask Dr. Smith about v2.1.4.', 'Next sentence.']);
+  });
+
+  it('does not present an incomplete paragraph as a fully aligned translation', () => {
+    const root = mount('<p>One. Two.</p><p>Three.</p>');
+    const layout = collectBilingualLayout(root, 'paragraph')!;
+    expect(renderBilingualLayout(root, layout, ['하나.', undefined, '셋.'])).toBe(true);
+    expect(root.querySelector('p')?.querySelector('.basa-bilingual-unit')).toBeNull();
+    expect(root.querySelectorAll('.basa-bilingual-unit')).toHaveLength(1);
   });
 
   it('interleaves sentences in the same text node without losing original text', () => {
@@ -56,6 +75,8 @@ describe('interleaved bilingual layout', () => {
   it('shares a stable unit cache key but separates different source text', () => {
     expect(bilingualUnitId('123', 'One.')).toBe(bilingualUnitId('123', 'One.'));
     expect(bilingualUnitId('123', 'One.')).not.toBe(bilingualUnitId('123', 'Two.'));
+    expect(bilingualUnitId('123', 'One.', 0, 'a')).not.toBe(bilingualUnitId('123', 'One.', 1, 'a'));
+    expect(bilingualUnitId('123', 'One.', 0, 'a')).not.toBe(bilingualUnitId('123', 'One.', 0, 'b'));
   });
 
   it('bounds exceptionally fragmented messages without dropping the original', () => {

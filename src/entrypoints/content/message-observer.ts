@@ -37,14 +37,16 @@ interface BlockEntry {
 function resolveBlock(entry: BlockEntry, results: Map<string, string>, preserveTokens: boolean) {
   const { block, id } = entry;
   let translation = results.get(id) || block.text;
+  let complete = !entry.send || Boolean(results.get(id));
   if (preserveTokens && block.placeholders.length) {
     translation = translation.replace(/§\s*([MCP])\s*(\d+)\s*§/gi,
       (_, prefix: string, index: string) => `§${prefix.toUpperCase()}${index}§`);
-    if (block.placeholders.some(({ token }) => !translation.includes(token))) {
+    if (block.placeholders.some(({ token }) => translation.split(token).length !== 2)) {
       translation = block.text;
+      complete = false;
     }
   }
-  return { block, translation };
+  return { block, translation, complete };
 }
 
 export class MessageTranslationObserver {
@@ -423,7 +425,7 @@ export class MessageTranslationObserver {
             continue;
           }
           if (plan.bilingual) {
-            if (!this.active || !renderBilingualLayout(plan.element, plan.bilingual, translatedBlocks.map(({ translation }) => translation))) {
+            if (!this.active || !renderBilingualLayout(plan.element, plan.bilingual, translatedBlocks.map(({ translation, complete }) => complete ? translation : undefined))) {
               incompleteEmbeds.add(plan.parent);
               continue;
             }
@@ -480,11 +482,11 @@ export class MessageTranslationObserver {
       if (item.element.querySelector('.discord-translator-translation')) return null;
       const bilingual = collectBilingualLayout(item.element, settings.bilingualGranularity);
       if (bilingual) {
-        if (!bilingual.units.length) return null;
-        const entries = bilingual.units.map(({ block, send }) => ({
+        if (!bilingual.units.some(({ send }) => send)) return null;
+        const entries = bilingual.units.map(({ block, send }, index) => ({
           block,
           id: bilingual.units.length === 1 && block.text === fallbackText && !block.placeholders.length
-            ? item.id : bilingualUnitId(item.id, block.text),
+            ? item.id : bilingualUnitId(item.id, block.text, index, bilingual.fingerprint),
           send,
         }));
         return { kind: 'structured', element: item.element, parent, entries, embed, bilingual };
@@ -604,7 +606,7 @@ export class MessageTranslationObserver {
             continue;
           }
           if (plan.bilingual) {
-            if (!this.active || !renderBilingualLayout(plan.element, plan.bilingual, translatedBlocks.map(({ translation }) => translation))) {
+            if (!this.active || !renderBilingualLayout(plan.element, plan.bilingual, translatedBlocks.map(({ translation, complete }) => complete ? translation : undefined))) {
               incompleteEmbed = true;
               continue;
             }

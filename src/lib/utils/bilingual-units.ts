@@ -15,10 +15,14 @@ export interface BilingualUnit {
   block: StructuredBlock;
   anchor: Anchor;
   send: boolean;
+  paragraph: number;
+  gapBefore: string;
 }
 
 export interface BilingualLayout {
   source: string;
+  fingerprint: string;
+  granularity: InterleavedGranularity;
   units: BilingualUnit[];
 }
 
@@ -28,11 +32,46 @@ const IGNORED = '[class*="hiddenVisually"], [aria-hidden="true"]:not(img):not([c
 const MAX_UNITS = 96;
 let sentenceSegmenter: Intl.Segmenter | undefined;
 
+function hashText(text: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 16777619);
+  return (hash >>> 0).toString(36);
+}
+
 function sentenceRanges(text: string, start: number, end: number): Array<[number, number]> {
   if (typeof Intl.Segmenter !== 'function') return [[start, end]];
   sentenceSegmenter ??= new Intl.Segmenter(undefined, { granularity: 'sentence' });
-  return Array.from(sentenceSegmenter.segment(text.slice(start, end)), ({ index, segment }) =>
-    [start + index, start + index + segment.length]);
+  const paragraph = text.slice(start, end);
+  const protectedRanges: Array<[number, number]> = [];
+  // As in Phrase Desk, punctuation within URLs, abbreviations, versions and
+  // protected tokens must not become artificial sentence boundaries.
+  for (const pattern of [
+    /\b(?:https?:\/\/|www\.)[^\s<>"']+/gi,
+    /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,
+    /\b(?:v?\d+(?:\.\d+)+)\b/gi,
+    /\b(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|vs|etc|e\.g|i\.e)\.\s+\S+/gi,
+    /\b(?:a\.m|p\.m)\./gi,
+    /§P\d+§/g,
+  ]) {
+    for (const match of paragraph.matchAll(pattern)) {
+      const at = match.index!;
+      protectedRanges.push([at, at + match[0].length]);
+    }
+  }
+  protectedRanges.sort((a, b) => a[0] - b[0]);
+  const ranges: Array<[number, number]> = [];
+  let protectionIndex = 0;
+  let protectedUntil = -1;
+  for (const { index, segment } of sentenceSegmenter.segment(paragraph)) {
+    while (protectionIndex < protectedRanges.length && protectedRanges[protectionIndex]![0] < index) {
+      protectedUntil = Math.max(protectedUntil, protectedRanges[protectionIndex]![1]);
+      protectionIndex++;
+    }
+    const previous = ranges[ranges.length - 1];
+    if (previous && index < protectedUntil) previous[1] = start + index + segment.length;
+    else ranges.push([start + index, start + index + segment.length]);
+  }
+  return ranges;
 }
 
 /**
@@ -46,6 +85,7 @@ export function collectBilingualLayout(root: HTMLElement, granularity: Interleav
   let pieces: Piece[] = [];
   let text = '';
   let tokenIndex = 0;
+  let paragraphIndex = 0;
   let overflow = false;
 
   function addPiece(value: string, node: Text | HTMLElement, kind: Piece['kind'], placeholder?: Placeholder): void {
@@ -67,7 +107,11 @@ export function collectBilingualLayout(root: HTMLElement, granularity: Interleav
 
     let cursor = 0;
     for (const [pStart, pEnd] of paragraphs) {
-      const ranges = granularity === 'sentence' ? sentenceRanges(text, pStart, pEnd) : [[pStart, pEnd] as [number, number]];
+      // Both layouts use the same canonical units. Paragraph mode only groups
+      // their rendered translations; it does not create a second translation.
+      const paragraph = paragraphIndex++;
+      const ranges = sentenceRanges(text, pStart, pEnd);
+      let previousEnd = pStart;
       for (const [rawStart, rawEnd] of ranges) {
         const raw = text.slice(rawStart, rawEnd);
         const value = raw.trim();
@@ -87,11 +131,14 @@ export function collectBilingualLayout(root: HTMLElement, granularity: Interleav
         if (endPiece.kind === 'atomic' && to !== endPiece.end) { overflow = true; break; }
         if (placeholders.some(({ token }) => !value.includes(token))) { overflow = true; break; }
         const send = /\p{L}/u.test(value.replace(/§P\d+§/g, ''));
-        if (!send) continue;
         const anchor: Anchor = endPiece.kind === 'text'
           ? { node: endPiece.node as Text, offset: to - endPiece.start }
           : { node: endPiece.node as HTMLElement };
-        units.push({ block: { tagName: 'p', text: value, placeholders }, anchor, send });
+        units.push({
+          block: { tagName: 'p', text: value, placeholders },
+          anchor, send, paragraph, gapBefore: text.slice(previousEnd, from),
+        });
+        previousEnd = to;
         if (units.length > MAX_UNITS) { overflow = true; break; }
       }
       if (overflow) break;
@@ -127,13 +174,11 @@ export function collectBilingualLayout(root: HTMLElement, granularity: Interleav
   flush();
   // Abnormally fragmented messages retain the existing whole-message layout
   // rather than producing an unbounded number of separate API items.
-  return overflow ? null : { source, units };
+  return overflow ? null : { source, fingerprint: hashText(source), granularity, units };
 }
 
-export function bilingualUnitId(messageId: string, text: string): string {
-  let hash = 2166136261;
-  for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 16777619);
-  return `${messageId}-basa-pair-v1-${text.length}-${(hash >>> 0).toString(36)}`;
+export function bilingualUnitId(messageId: string, text: string, ordinal = 0, fingerprint = ''): string {
+  return `${messageId}-basa-pair-v2-${fingerprint}-${ordinal}-${text.length}-${hashText(text)}`;
 }
 
 function insertAfterAnchor(root: HTMLElement, anchor: Anchor, translation: HTMLElement): void {
@@ -152,20 +197,40 @@ function insertAfterAnchor(root: HTMLElement, anchor: Anchor, translation: HTMLE
 }
 
 /** Insert only translated units; original links, mentions and text remain in the live DOM. */
-export function renderBilingualLayout(root: HTMLElement, layout: BilingualLayout, translations: string[]): boolean {
+export function renderBilingualLayout(root: HTMLElement, layout: BilingualLayout, translations: Array<string | undefined>): boolean {
   if (!root.isConnected || root.querySelector('.discord-translator-translation') ||
       root.textContent !== layout.source || translations.length !== layout.units.length) return false;
 
   const inserts: Array<{ anchor: Anchor; node: HTMLElement }> = [];
-  for (let i = 0; i < layout.units.length; i++) {
-    const unit = layout.units[i]!;
-    const translated = translations[i];
-    if (!translated || translated === unit.block.text || !unit.send) continue;
-    if (!root.contains(unit.anchor.node) || (unit.anchor.offset !== undefined && unit.anchor.offset > unit.anchor.node.length)) return false;
-    const node = document.createElement('span');
-    node.className = 'discord-translator-translation basa-bilingual-unit';
-    node.appendChild(buildInlineFromTranslation(translated, unit.block.placeholders));
-    inserts.push({ anchor: unit.anchor, node });
+  let start = 0;
+  while (start < layout.units.length) {
+    let end = start + 1;
+    if (layout.granularity === 'paragraph') {
+      while (end < layout.units.length &&
+          layout.units[end]!.paragraph === layout.units[start]!.paragraph) end++;
+    }
+    let changed = false;
+    let complete = true;
+    for (let i = start; i < end; i++) {
+      const unit = layout.units[i]!;
+      if (unit.send && !translations[i]) complete = false;
+      if (unit.send && translations[i] && translations[i] !== unit.block.text) changed = true;
+    }
+    // A paragraph pair is only shown when its source units can be matched.
+    // Do not disguise a partially failed response as a complete translation.
+    if (changed && complete) {
+      const anchor = layout.units[end - 1]!.anchor;
+      if (!root.contains(anchor.node) || (anchor.offset !== undefined && anchor.offset > anchor.node.length)) return false;
+      const node = document.createElement('span');
+      node.className = 'discord-translator-translation basa-bilingual-unit';
+      for (let i = start; i < end; i++) {
+        const unit = layout.units[i]!;
+        if (i > start) node.appendChild(document.createTextNode(unit.gapBefore));
+        node.appendChild(buildInlineFromTranslation(unit.send ? translations[i]! : unit.block.text, unit.block.placeholders));
+      }
+      inserts.push({ anchor, node });
+    }
+    start = end;
   }
   // Later text offsets must be used first so splitText cannot invalidate them.
   for (let i = inserts.length - 1; i >= 0; i--) {
