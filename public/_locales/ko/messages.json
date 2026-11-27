@@ -60,10 +60,10 @@
     "message": "캐시 삭제 실패"
   },
   "confirm_clearCache": {
-    "message": "저장된 번역 캐시를 모두 삭제할까?"
+    "message": "저장된 번역 캐시를 모두 삭제할까요?"
   },
   "confirm_deletePreset": {
-    "message": "프리셋 \"$NAME$\"을 삭제할까?",
+    "message": "프리셋 \"$NAME$\"을 삭제할까요?",
     "placeholders": {
       "name": {
         "content": "$1"
